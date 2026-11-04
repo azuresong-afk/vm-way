@@ -1,4 +1,13 @@
-"""Клиент API «Сканера» (Bearer-токен сервисной учётной записи)."""
+"""Клиент API «Сканера» (Bearer-токен сервисной учётной записи).
+
+Формы ответов сверены с кодом «Сканера» (scanner/api/schemas.py):
+- GET /runs/{id}/findings — список FindingOut, всего — X-Total-Count, limit ≤ 1000;
+- GET /runs/{id}/fixes — FixPlanOut {total, items, …}, limit ≤ 500;
+- GET /runs/{id}/coverage — CoverageOut {entries: [{host, module, status, label, reason}], hosts, …};
+- GET /engagements/{id}/allowlist — список AllowlistOut {id, cidr, …};
+- POST /engagements/{id}/runs — RunCreated (RunOut + accepted_targets: int, denied_targets: [{target, reason, count}]),
+  ни одной разрешённой цели — 422.
+"""
 
 import threading
 import time
@@ -6,13 +15,19 @@ from typing import Any, Protocol
 
 import httpx
 
-# Завершённые прогоны — все, кроме pending/running.
-FINISHED_STATUSES = {"done", "partial", "failed", "stopped", "interrupted"}
-PAGE = 500
+# Завершённые прогоны — все, кроме pending/running (repository.FINISHED_RUN_STATUSES).
+FINISHED_STATUSES = frozenset({"done", "partial", "failed", "stopped", "interrupted"})
+FINDINGS_PAGE = 1000
+FIXES_PAGE = 500
 
 
 class ScannerError(Exception):
     """Ошибка обращения к «Сканеру» (текст безопасен для показа пользователю)."""
+
+    def __init__(self, message: str, status: int | None = None, detail: Any = None):
+        super().__init__(message)
+        self.status = status
+        self.detail = detail
 
 
 class ScannerClient(Protocol):
@@ -57,7 +72,7 @@ class HttpScannerClient:
         except httpx.HTTPError as e:
             raise ScannerError(f"«Сканер» недоступен: {type(e).__name__}") from e
         if r.status_code != 200:
-            raise ScannerError(f"Вход в «Сканер» не выполнен (HTTP {r.status_code})")
+            raise ScannerError(f"Вход в «Сканер» не выполнен (HTTP {r.status_code})", r.status_code)
         self._token = r.json()["access_token"]
 
     def _request(self, method: str, path: str, **kw: Any) -> httpx.Response:
@@ -80,98 +95,74 @@ class HttpScannerClient:
                 time.sleep(self.retry_delay * (1 + attempt))
                 continue
             if r.status_code >= 400:
-                raise ScannerError(f"«Сканер» ответил HTTP {r.status_code} на {method} {path}")
+                try:
+                    detail = r.json().get("detail")
+                except ValueError:
+                    detail = None
+                raise ScannerError(f"«Сканер» ответил HTTP {r.status_code} на {method} {path}", r.status_code, detail)
             return r
         raise ScannerError("«Сканер» не ответил")
 
     def _get(self, path: str, **params: Any) -> Any:
         return self._request("GET", path, params={k: v for k, v in params.items() if v is not None}).json()
 
-    def _paged(self, path: str, **params: Any) -> list[dict]:
-        out: list[dict] = []
-        offset = 0
-        while True:
-            r = self._request("GET", path, params={**params, "limit": PAGE, "offset": offset})
-            batch = r.json()
-            items = batch if isinstance(batch, list) else batch.get("items", [])
-            out.extend(items)
-            total = int(r.headers.get("X-Total-Count", len(out)))
-            offset += len(items)
-            if not items or offset >= total:
-                return out
-
     def me(self) -> dict:
         return self._get("/me")
 
     def engagements(self) -> list[dict]:
-        data = self._get("/engagements")
-        return data if isinstance(data, list) else data.get("items", [])
+        return self._get("/engagements")
 
     def engagement(self, engagement_id: int) -> dict:
         return self._get(f"/engagements/{engagement_id}")
 
     def allowlist(self, engagement_id: int) -> list[str]:
-        data = self._get(f"/engagements/{engagement_id}/allowlist")
-        if isinstance(data, dict):
-            data = data.get("items", data.get("targets", []))
-        return [x if isinstance(x, str) else x.get("target", x.get("value", "")) for x in data]
+        return [row["cidr"] for row in self._get(f"/engagements/{engagement_id}/allowlist")]
 
     def runs(self, engagement_id: int, status: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
-        data = self._get(f"/engagements/{engagement_id}/runs", status=status, limit=limit, offset=offset)
-        return data if isinstance(data, list) else data.get("items", [])
+        return self._get(f"/engagements/{engagement_id}/runs", status=status, limit=limit, offset=offset)
 
     def run(self, run_id: int) -> dict:
         return self._get(f"/runs/{run_id}")
 
     def findings(self, run_id: int) -> list[dict]:
-        return self._paged(f"/runs/{run_id}/findings")
+        out: list[dict] = []
+        while True:
+            r = self._request("GET", f"/runs/{run_id}/findings", params={"limit": FINDINGS_PAGE, "offset": len(out)})
+            batch = r.json()
+            out.extend(batch)
+            total = int(r.headers.get("X-Total-Count", len(out)))
+            if not batch or len(out) >= total:
+                return out
 
     def fixes(self, run_id: int) -> list[dict]:
-        data = self._get(f"/runs/{run_id}/fixes")
-        return data if isinstance(data, list) else data.get("items", data.get("actions", []))
+        out: list[dict] = []
+        while True:
+            page = self._get(f"/runs/{run_id}/fixes", limit=FIXES_PAGE, offset=len(out))
+            out.extend(page["items"])
+            if not page["items"] or len(out) >= page["total"]:
+                return out
 
     def coverage(self, run_id: int) -> list[dict]:
-        data = self._get(f"/runs/{run_id}/coverage")
-        return normalize_coverage(data)
+        return normalize_coverage(self._get(f"/runs/{run_id}/coverage"))
 
     def start_run(self, engagement_id: int, body: dict) -> dict:
         return self._request("POST", f"/engagements/{engagement_id}/runs", json=body).json()
 
 
-def normalize_coverage(data: Any) -> list[dict]:
-    """Покрытие → плоский список {host, module, status, reason}.
-
-    Принимает и плоский список, и вложенную форму {hosts: [{host, modules: {module: status}}]}.
-    """
-    if isinstance(data, dict):
-        data = data.get("items", data.get("hosts", []))
-    out: list[dict] = []
-    for row in data or []:
-        if "module" in row:
-            out.append(
-                {
-                    "host": row["host"],
-                    "module": row["module"],
-                    "status": row.get("status", ""),
-                    "reason": row.get("reason", "") or "",
-                }
-            )
-            continue
-        modules = row.get("modules", {})
-        items = modules.items() if isinstance(modules, dict) else ((m["module"], m) for m in modules)
-        for module, st in items:
-            status = st if isinstance(st, str) else st.get("status", "")
-            reason = "" if isinstance(st, str) else st.get("reason", "") or ""
-            out.append({"host": row["host"], "module": module, "status": status, "reason": reason})
-    return out
+def normalize_coverage(data: dict) -> list[dict]:
+    """CoverageOut → плоский список {host, module, status, reason}."""
+    return [
+        {"host": e["host"], "module": e["module"], "status": e["status"], "reason": e.get("reason") or ""}
+        for e in data.get("entries", [])
+    ]
 
 
 def make_client(base_url: str, username: str = "", password: str = "", verify_tls: bool = True) -> ScannerClient:
-    """Источник с адресом mock://<имя> работает на встроенном моке (демо и тесты)."""
+    """Источник с адресом mock://<имя> работает на встроенном моке API «Сканера» (демо и тесты)."""
     if base_url.startswith("mock://"):
         from app.integrations.scanner.mock import MockScanner
 
-        return MockScanner.shared(base_url[len("mock://") :] or "demo")
+        return MockScanner.shared(base_url[len("mock://") :] or "demo").client()
     if not base_url.startswith(("http://", "https://")):
         raise ScannerError("Адрес API «Сканера» должен начинаться с https:// или http://")
     return HttpScannerClient(base_url, username, password, verify_tls)

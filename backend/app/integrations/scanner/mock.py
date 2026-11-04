@@ -1,37 +1,64 @@
-"""Мок «Сканера» на демо-фикстуре: плановые прогоны и прицельные проверки.
+"""Мок API «Сканера» на демо-фикстуре: отвечает на HTTP-запросы в тех же формах, что настоящий «Сканер».
 
-Прицельный прогон считается от «состояния мира» (fixtures/demo.json → world):
-находки последнего планового прогона минус уже исправленное администраторами;
-недоступные хосты и хосты без учётной записи честно отражаются в покрытии.
+Клиент к моку — обычный HttpScannerClient поверх httpx.MockTransport, поэтому разбор ответов
+проверяется на тех же формах, что придут от живого «Сканера».
+
+Прицельный прогон считается от «состояния мира» (fixtures/demo.json → world): находки последнего
+планового прогона минус уже исправленное администраторами; недоступные хосты и хосты без учётной
+записи честно отражаются в покрытии.
 """
 
 import copy
 import ipaddress
 import json
+import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.integrations.scanner.client import ScannerError
+import httpx
+
+from app.integrations.scanner.client import HttpScannerClient
 
 FIXTURE = Path(__file__).parent / "fixtures" / "demo.json"
+COVERAGE_LABELS = {
+    "completed": "выполнено",
+    "not_applicable": "неприменимо",
+    "skipped": "пропущено",
+    "unreachable": "хост недоступен",
+    "no_credentials": "нет учётной записи",
+    "timeout": "таймаут",
+    "error": "ошибка",
+}
+_VENDOR_PKG = re.compile(r"\(пакет ([^)]+)\)|для пакета (\S+)")
 _registry: dict[str, "MockScanner"] = {}
 _registry_lock = threading.Lock()
 
 
+def _now() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def vendor_package(finding: dict) -> str | None:
+    m = _VENDOR_PKG.search(finding.get("evidence") or "")
+    return (m.group(1) or m.group(2)) if m else None
+
+
 class MockScanner:
+    TOKEN = "mock-token"  # noqa: S105 — не секрет, токен мока
+
     def __init__(self, data: dict | None = None):
         self.data = copy.deepcopy(data) if data is not None else json.loads(FIXTURE.read_text(encoding="utf-8"))
         self._runs: dict[int, dict] = {r["run"]["id"]: r for r in self.data["runs"]}
         self._next_id = max(self._runs) + 900
         self._polls: dict[int, int] = {}
         self._lock = threading.Lock()
-        self.calls: list[tuple[str, object]] = []
+        self.requests: list[tuple[str, str, object]] = []
         world = self.data.get("world", {})
         self.patched: set[tuple[str, str]] = {(p["host"], p["package"]) for p in world.get("patched", [])}
         self.unreachable: set[str] = set(world.get("unreachable", []))
         self.no_credentials: set[str] = set(world.get("no_credentials", []))
-        # Сколько опросов прицельный прогон остаётся «running» (0 — сразу завершён).
+        # Сколько опросов прицельный прогон остаётся «running» (0 — завершён при первом опросе).
         self.running_polls = 1
 
     @classmethod
@@ -46,104 +73,198 @@ class MockScanner:
         with _registry_lock:
             _registry.clear()
 
-    # --- чтение ---
-    def me(self) -> dict:
-        return {
-            "id": 99,
-            "username": "svc-vm",
-            "display_name": "Сервисная учётная запись «Устранения»",
-            "roles": ["auditor", "operator"],
-            "permissions": ["host_credentials"],
-        }
+    def client(self) -> HttpScannerClient:
+        c = HttpScannerClient("https://scanner.mock/api", "svc-vm", "mock", transport=httpx.MockTransport(self.handle))
+        c.retry_delay = 0
+        return c
 
-    def engagements(self) -> list[dict]:
-        return copy.deepcopy(self.data["engagements"])
-
-    def engagement(self, engagement_id: int) -> dict:
-        for e in self.data["engagements"]:
-            if e["id"] == engagement_id:
-                return copy.deepcopy(e)
-        raise ScannerError(f"Проект «Сканера» {engagement_id} не найден")
-
-    def allowlist(self, engagement_id: int) -> list[str]:
-        self.engagement(engagement_id)
-        return list(self.data["allowlist"].get(str(engagement_id), []))
-
-    def runs(self, engagement_id: int, status: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
-        items = [
-            self.run(r)
-            for r in sorted(self._runs, reverse=True)
-            if self._runs[r]["run"]["engagement_id"] == engagement_id
+    # --- HTTP ---
+    def handle(self, req: httpx.Request) -> httpx.Response:
+        path = req.url.path.removeprefix("/api")
+        body = json.loads(req.content) if req.content else None
+        self.requests.append((req.method, path, body))
+        if path == "/auth/token" and req.method == "POST":
+            return httpx.Response(200, json={"access_token": self.TOKEN, "token_type": "bearer", "expires_in": 3600})
+        if req.headers.get("authorization") != f"Bearer {self.TOKEN}":
+            return httpx.Response(401, json={"detail": "not authenticated"})
+        params = req.url.params
+        routes = [
+            ("GET", r"/me", lambda: self.data["me"]),
+            ("GET", r"/engagements", lambda: self.data["engagements"]),
+            ("GET", r"/engagements/(\d+)", lambda e: self._engagement(int(e))),
+            ("GET", r"/engagements/(\d+)/allowlist", lambda e: self._allowlist(int(e))),
+            ("GET", r"/engagements/(\d+)/runs", lambda e: self._run_list(int(e), params)),
+            ("POST", r"/engagements/(\d+)/runs", lambda e: self._start_run(int(e), body or {})),
+            ("GET", r"/runs/(\d+)", lambda r: self._run_meta(int(r))),
+            ("GET", r"/runs/(\d+)/findings", lambda r: self._findings(int(r), params)),
+            ("GET", r"/runs/(\d+)/fixes", lambda r: self._fixes(int(r), params)),
+            ("GET", r"/runs/(\d+)/coverage", lambda r: self._coverage(int(r))),
         ]
-        if status:
-            items = [r for r in items if r["status"] == status]
-        return items[offset : offset + limit]
+        for method, rx, fn in routes:
+            m = re.fullmatch(rx, path)
+            if m and method == req.method:
+                try:
+                    out = fn(*m.groups())
+                except LookupError as e:
+                    return httpx.Response(404, json={"detail": str(e)})
+                if isinstance(out, httpx.Response):
+                    return out
+                return httpx.Response(200, json=out)
+        return httpx.Response(404, json={"detail": "Not Found"})
+
+    def _engagement(self, eid: int) -> dict:
+        for e in self.data["engagements"]:
+            if e["id"] == eid:
+                return e
+        raise LookupError("engagement not found")
+
+    def _allowlist(self, eid: int) -> list[dict]:
+        self._engagement(eid)
+        return self.data["allowlist"].get(str(eid), [])
 
     def _get(self, run_id: int) -> dict:
         if run_id not in self._runs:
-            raise ScannerError(f"«Сканер» ответил HTTP 404 на GET /runs/{run_id}")
+            raise LookupError("scan run not found")
         return self._runs[run_id]
 
-    def run(self, run_id: int) -> dict:
+    def _run_meta(self, run_id: int) -> dict:
         with self._lock:
-            r = self._get(run_id)
-            meta = r["run"]
+            meta = self._get(run_id)["run"]
             if meta["status"] == "running":
                 left = self._polls.get(run_id, 0)
                 if left <= 0:
-                    meta["status"] = "done"
-                    meta["progress"] = 100
-                    meta["finished_at"] = _now()
+                    meta.update(
+                        status="done",
+                        finished_at=_now(),
+                        progress={
+                            "stage": "done",
+                            "percent": 100,
+                            "hosts_done": len(meta["targets"]),
+                            "hosts_total": len(meta["targets"]),
+                        },
+                    )
                 else:
                     self._polls[run_id] = left - 1
             return copy.deepcopy(meta)
 
-    def findings(self, run_id: int) -> list[dict]:
-        return copy.deepcopy(self._get(run_id)["findings"])
+    def _run_list(self, eid: int, params: httpx.QueryParams) -> httpx.Response:
+        items = [
+            self._run_meta(r) for r in sorted(self._runs, reverse=True) if self._runs[r]["run"]["engagement_id"] == eid
+        ]
+        if params.get("status"):
+            items = [r for r in items if r["status"] == params["status"]]
+        off, lim = int(params.get("offset", 0)), int(params.get("limit", 50))
+        return httpx.Response(200, json=items[off : off + lim], headers={"X-Total-Count": str(len(items))})
 
-    def fixes(self, run_id: int) -> list[dict]:
-        return copy.deepcopy(self._get(run_id)["fixes"])
+    def _findings(self, run_id: int, params: httpx.QueryParams) -> httpx.Response:
+        items = self._get(run_id)["findings"]
+        off = int(params.get("offset", 0))
+        lim = min(int(params.get("limit", 1000)), 1000)
+        return httpx.Response(200, json=items[off : off + lim], headers={"X-Total-Count": str(len(items))})
 
-    def coverage(self, run_id: int) -> list[dict]:
-        return copy.deepcopy(self._get(run_id)["coverage"])
+    def _fixes(self, run_id: int, params: httpx.QueryParams) -> dict:
+        tasks = self._get(run_id)["fixes"]
+        off = int(params.get("offset", 0))
+        lim = min(int(params.get("limit", 50)), 500)
+        kinds: dict[str, int] = {}
+        oss: dict[str, int] = {}
+        sevs: dict[str, int] = {}
+        for t in tasks:
+            kinds[t["kind"]] = kinds.get(t["kind"], 0) + 1
+            oss[t["os"] or "-"] = oss.get(t["os"] or "-", 0) + 1
+            sevs[t["severity"]] = sevs.get(t["severity"], 0) + 1
+        return {
+            "total": len(tasks),
+            "items": tasks[off : off + lim],
+            "tasks": len(tasks),
+            "hosts": len({h["host"] for t in tasks for h in t["hosts"]}),
+            "findings": sum(t["finding_count"] for t in tasks),
+            "false_positives": 0,
+            "kinds": kinds,
+            "os": oss,
+            "severities": sevs,
+        }
+
+    def _coverage(self, run_id: int) -> dict:
+        r = self._get(run_id)
+        entries = r["coverage_entries"]
+        hosts = []
+        for h in dict.fromkeys(e["host"] for e in entries):
+            per = {
+                e["module"]: {"status": e["status"], "label": e["label"], "reason": e["reason"]}
+                for e in entries
+                if e["host"] == h
+            }
+            sts = {v["status"] for v in per.values()}
+            status = (
+                "checked"
+                if sts <= {"completed", "not_applicable"}
+                else ("unreachable" if sts == {"unreachable"} else "partial")
+            )
+            hosts.append({"host": h, "status": status, "modules": per})
+        counts = {s: sum(1 for e in entries if e["status"] == s) for s in COVERAGE_LABELS}
+        summary = {
+            "hosts": len(hosts),
+            "hosts_checked": sum(h["status"] == "checked" for h in hosts),
+            "hosts_partial": sum(h["status"] == "partial" for h in hosts),
+            "hosts_unreachable": sum(h["status"] == "unreachable" for h in hosts),
+            "hosts_not_checked": 0,
+            "counts": counts,
+        }
+        return {
+            "scan_run_id": run_id,
+            "status": r["run"]["status"],
+            "summary": summary,
+            "hosts": hosts,
+            "entries": entries,
+            "legacy": False,
+        }
 
     # --- прицельный прогон ---
-    def start_run(self, engagement_id: int, body: dict) -> dict:
-        self.calls.append(("start_run", copy.deepcopy(body)))
-        nets = [ipaddress.ip_network(n, strict=False) for n in self.allowlist(engagement_id)]
+    def _start_run(self, eid: int, body: dict) -> httpx.Response:
+        nets = [ipaddress.ip_network(c, strict=False) for c in (a["cidr"] for a in self._allowlist(eid))]
         accepted, denied = [], []
         for t in body.get("targets", []):
             try:
                 ok = any(ipaddress.ip_address(t) in n for n in nets)
             except ValueError:
                 ok = False
-            (accepted if ok else denied).append(t)
+            if ok:
+                accepted.append(t)
+            else:
+                denied.append({"target": t, "reason": "вне allowlist договора", "count": 1})
         if not accepted:
-            raise ScannerError("«Сканер» ответил HTTP 422: все цели вне allowlist")
+            return httpx.Response(
+                422,
+                json={
+                    "detail": {
+                        "message": "no requested target is in the engagement allowlist",
+                        "denied_targets": denied,
+                    }
+                },
+            )
         modules = list(body.get("modules") or [])
         base = self._get(self.data["world"]["base_run_id"])
         with self._lock:
             self._next_id += 1
             run_id = self._next_id
-        reachable = [h for h in accepted if h not in self.unreachable]
-        findings, keep_ids = [], set()
+        reachable = {h for h in accepted if h not in self.unreachable}
+        kept: dict[int, dict] = {}
         for f in base["findings"]:
             if f["host"] not in reachable or f["module"] not in modules:
                 continue
             if f["module"] == "auth_inventory" and f["host"] in self.no_credentials:
                 continue
-            if (f["host"], f["software"]) in self.patched:
+            if (f["host"], vendor_package(f)) in self.patched:
                 continue
             nf = copy.deepcopy(f)
-            nf["id"] = run_id * 10 + len(findings) + 1
-            keep_ids.add(f["id"])
-            findings.append((f["id"], nf))
-        id_map = {old: new["id"] for old, new in findings}
+            nf.update(id=run_id * 10 + len(kept) + 1, status="open", detected_at=_now())
+            kept[f["id"]] = nf
         fixes = []
         for fx in base["fixes"]:
             hosts = []
             for h in fx["hosts"]:
-                refs = [{**ref, "id": id_map[ref["id"]]} for ref in h["findings"] if ref["id"] in keep_ids]
+                refs = [{**ref, "id": kept[ref["id"]]["id"]} for ref in h["findings"] if ref["id"] in kept]
                 if refs:
                     hosts.append({**h, "findings": refs})
             if hosts:
@@ -155,39 +276,45 @@ class MockScanner:
                         "finding_count": sum(len(h["findings"]) for h in hosts),
                     }
                 )
-        coverage = []
+        entries = []
         for h in accepted:
             for m in modules:
                 if h in self.unreachable:
-                    st, reason = "unreachable", "Хост не ответил на запросы"
+                    st, reason = "unreachable", "хост не ответил на пробы обнаружения"
                 elif m in ("auth_inventory", "config_audit") and h in self.no_credentials:
-                    st, reason = "no_credentials", "Нет учётной записи для входа по SSH"
+                    st, reason = "no_credentials", "нет учётной записи для входа по SSH"
                 else:
-                    st, reason = "completed", ""
-                coverage.append({"host": h, "module": m, "status": st, "reason": reason})
+                    st, reason = "completed", None
+                entries.append({"host": h, "module": m, "status": st, "label": COVERAGE_LABELS[st], "reason": reason})
         meta = {
             "id": run_id,
-            "engagement_id": engagement_id,
-            "name": body.get("name", ""),
+            "engagement_id": eid,
             "modules": modules,
+            "rate_profile": body.get("rate_profile", "gentle"),
+            "credential_ids": body.get("credential_ids", []),
+            "cred_set_ids": [],
+            "name": body.get("name"),
             "targets": accepted,
+            "schedule_id": None,
             "status": "running",
+            "started_by": 99,
             "started_at": _now(),
             "finished_at": None,
-            "progress": 10,
+            "created_at": _now(),
+            "error_message": None,
+            "retry_of": None,
+            "options": {"no_ping": False, "profile": body.get("profile")},
             "warnings": [],
-            "options": {k: v for k, v in body.items() if k not in ("targets", "modules")},
+            "progress": {"stage": "vuln", "percent": 10, "hosts_done": 0, "hosts_total": len(accepted)},
         }
         with self._lock:
             self._runs[run_id] = {
                 "run": meta,
-                "findings": [nf for _, nf in findings],
+                "findings": list(kept.values()),
                 "fixes": fixes,
-                "coverage": coverage,
+                "coverage_entries": entries,
             }
             self._polls[run_id] = self.running_polls
-        return {**copy.deepcopy(meta), "accepted_targets": accepted, "denied_targets": denied}
-
-
-def _now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return httpx.Response(
+            202, json={**copy.deepcopy(meta), "accepted_targets": len(accepted), "denied_targets": denied}
+        )
