@@ -148,6 +148,10 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "ticket.bulk": "Массовое действие",
   "ticket.verify": "Повторная проверка",
   "ticket.verify_result": "Итог проверки",
+  "ticket.window": "Заявка в окне",
+  "window.create": "Окно создано",
+  "window.update": "Окно изменено",
+  "window.delete": "Окно удалено",
   "audit.export": "Выгрузка журнала",
   "demo.seed": "Демо-данные",
 };
@@ -160,6 +164,7 @@ export const PERM_LABEL: Record<string, string> = {
   ticket_assign: "назначение",
   ticket_override: "переопределение уровня",
   verify: "повторная проверка",
+  windows_manage: "окна обслуживания",
   projects_manage: "проекты",
   sources_manage: "источники",
   users_manage: "пользователи",

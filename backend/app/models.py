@@ -1,4 +1,4 @@
-"""Модель данных «Устранения» (этап 1)."""
+"""Модель данных «Устранения» (этап 1 и окна обслуживания этапа 2)."""
 
 import uuid
 from datetime import date, datetime
@@ -112,6 +112,35 @@ class RunCoverage(Base):
     reason: Mapped[str] = mapped_column(Text, default="")
 
 
+class MaintenanceWindow(Base):
+    """Окно обслуживания (задача 2.1): разовое, повторяющееся или блэкаут.
+
+    Разовое окно и блэкаут — интервал `starts_at…ends_at`. Повторяющееся — дни недели
+    (`weekdays`, 0 — понедельник), время начала `start_time` («22:00») в часовом поясе окна
+    и длительность; действует с `valid_from` по `valid_until` включительно. Охват — хосты
+    (`hosts`); пустой список — все хосты проекта."""
+
+    __tablename__ = "maintenance_windows"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(16))  # once | recurring | blackout
+    timezone: Mapped[str] = mapped_column(String(64), default="Europe/Moscow")
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    weekdays: Mapped[list] = mapped_column(JSON, default=list)
+    start_time: Mapped[str] = mapped_column(String(5), default="")
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    hosts: Mapped[list] = mapped_column(JSON, default=list)
+    note: Mapped[str] = mapped_column(Text, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
     __table_args__ = (
@@ -137,6 +166,10 @@ class Ticket(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     is_regression: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Окно обслуживания, в которое поставлена заявка (задача 2.1).
+    window_id: Mapped[int | None] = mapped_column(
+        ForeignKey("maintenance_windows.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     action: Mapped[dict] = mapped_column(JSON, default=dict)
     evidence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -144,6 +177,7 @@ class Ticket(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])
+    window: Mapped["MaintenanceWindow | None"] = relationship()
     hosts: Mapped[list["TicketHost"]] = relationship(
         back_populates="ticket", cascade="all, delete-orphan", order_by="TicketHost.host"
     )

@@ -227,6 +227,14 @@ function Facts({ t }: { t: TicketDetail }) {
       <dl className="kv">
         <dt>Исполнитель</dt>
         <dd>{t.assignee ? t.assignee.display_name : <span className="faint">не назначена</span>}</dd>
+        <dt>Окно</dt>
+        <dd>
+          {t.window ? (
+            <Link to={`/windows?window=${t.window.id}`}>{t.window.name}</Link>
+          ) : (
+            <span className="faint">не запланирована</span>
+          )}
+        </dd>
         <dt>Наблюдатели</dt>
         <dd>{t.watchers.length ? t.watchers.map((w) => w.display_name).join(", ") : <span className="faint">нет</span>}</dd>
         <dt>Уровень</dt>
@@ -340,6 +348,8 @@ function historyText(h: HistoryEntry): string {
       return `Уязвимости (${String(d.count ?? "")}) перенесены в заявку №${h.to}`;
     case "regression":
       return `Регрессия: ${h.to}`;
+    case "window":
+      return h.to ? `Поставлена в окно «${h.to}»${h.from ? ` (вместо «${h.from}»)` : ""}` : `Снята с окна «${h.from}»`;
     case "verify_requested":
       return `Запущена повторная проверка: ${h.to}`;
     case "verify_result":

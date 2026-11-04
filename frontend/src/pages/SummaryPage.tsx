@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CheckCircle2, Download } from "lucide-react";
+import { CalendarClock, CheckCircle2, Download } from "lucide-react";
 import { api } from "../api/client";
 import type { Severity, SummaryOut } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -208,6 +208,51 @@ function TopHosts({ s }: { s: SummaryOut }) {
   );
 }
 
+/** Ближайшие окна обслуживания (2 недели): когда, сколько заявок и что закроет. */
+function Upcoming({ s }: { s: SummaryOut }) {
+  return (
+    <section className="card card-pad grow-2 stack" aria-labelledby="sum-windows">
+      <div className="inline" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+        <h2 id="sum-windows">Ближайшие окна</h2>
+        <Link to="/windows" style={{ fontSize: 13 }}>
+          Окна и план
+        </Link>
+      </div>
+      {s.upcoming_windows.length === 0 ? (
+        <Empty title="Окон на ближайшие две недели нет" icon={<CalendarClock size={28} />}>
+          Окна обслуживания настраивает руководитель в разделе «Окна и план».
+        </Empty>
+      ) : (
+        <div>
+          {s.upcoming_windows.map((o) => (
+            <Link key={`${o.window_id}-${o.start}`} to={`/windows?window=${o.window_id}&at=${encodeURIComponent(o.start)}`} className="list-row">
+              <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                <span className="ellipsis" style={{ color: o.cancelled ? "var(--text-3)" : "var(--text)", fontWeight: 500 }}>
+                  {o.window_name}
+                </span>
+                <span className="faint ellipsis" style={{ fontSize: 12.5 }}>
+                  {fmtDate(o.start)} · {fmtNumber(o.tickets ?? 0)} {plural(o.tickets ?? 0, ["заявка", "заявки", "заявок"])}
+                  {o.cancelled ? " · выпадает: блэкаут" : ""}
+                </span>
+              </span>
+              {o.cancelled ? (
+                <span className="pill pill-danger">блэкаут</span>
+              ) : (
+                <span className="pill pill-info" title="Закроет уязвимостей">
+                  {fmtNumber(o.will_close ?? 0)}
+                </span>
+              )}
+            </Link>
+          ))}
+          <span className="faint" style={{ fontSize: 12 }}>
+            Справа — сколько уязвимостей закроет окно, если всё пройдёт по плану.
+          </span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Verified({ s }: { s: SummaryOut }) {
   return (
     <section className="card card-pad grow-2 stack" aria-labelledby="sum-verified">
@@ -319,6 +364,9 @@ export function SummaryPage() {
           </div>
           <div className="row">
             <TopHosts s={s.data} />
+          </div>
+          <div className="row">
+            <Upcoming s={s.data} />
             <Verified s={s.data} />
           </div>
         </>

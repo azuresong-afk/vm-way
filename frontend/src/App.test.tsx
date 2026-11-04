@@ -5,7 +5,7 @@ import { App } from "./App";
 import { setToken } from "./api/client";
 import { AuthProvider } from "./auth/AuthContext";
 import { mockApi } from "./test/fetchMock";
-import { brief, detail, engineer, manager, project } from "./test/fixtures";
+import { brief, detail, engineer, manager, me, project, windowOut, windowPlan } from "./test/fixtures";
 
 function renderAt(path: string) {
   return render(
@@ -125,5 +125,77 @@ describe("права", () => {
     expect(await screen.findByText("Нет доступа")).toBeInTheDocument();
     expect(screen.queryByText("Администрирование")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Мои задачи/ })).toBeInTheDocument();
+  });
+});
+
+describe("окна и план", () => {
+  beforeEach(() => setToken("t"));
+
+  it("показывает итог «закроет N», заявку вне окна и снимает заявку с окна", async () => {
+    const calls = mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/windows": [windowOut, { ...windowOut, id: 4, kind: "blackout", name: "Новогодняя заморозка", tickets: 0, next: null }],
+      "/projects/p1/calendar": { from: "", to: "", items: [{ ...windowOut.next!, tickets: 2, will_close: 4 }] },
+      "/windows/3/plan": windowPlan,
+      "POST /tickets/5/window": { ...brief, window: null },
+    });
+    renderAt("/windows");
+    expect(await screen.findByRole("heading", { name: "Окна и план" })).toBeInTheDocument();
+    expect(await screen.findByText("закроет уязвимости")).toBeInTheDocument();
+    expect(screen.getByText(/Не помещаются в окно: 1 заявка/)).toBeInTheDocument();
+    expect(screen.getByText("Новогодняя заморозка")).toBeInTheDocument();
+    expect(screen.getByLabelText(/не помещается в окно/)).toBeInTheDocument();
+    // Время — по часам окна (Москва), а не браузера.
+    expect(screen.getAllByText("вт 10.11 22:00–02:00").length).toBeGreaterThan(0);
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: /Снять/ })[0]);
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/tickets/5/window")).toBe(true));
+    expect(calls.find((c) => c.path === "/tickets/5/window")!.body).toEqual({ window_id: null });
+  });
+
+  it("руководитель создаёт повторяющееся окно «вторник 22:00–02:00»", async () => {
+    const calls = mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/windows": [],
+      "/projects/p1/calendar": { from: "", to: "", items: [] },
+      "POST /projects/p1/windows": windowOut,
+      "/windows/3/plan": windowPlan,
+    });
+    renderAt("/windows");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Новое окно/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Название"), "Ночное окно");
+    await user.click(within(dialog).getByRole("button", { name: "Создать" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/projects/p1/windows")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/projects/p1/windows")!.body).toMatchObject({
+      name: "Ночное окно",
+      kind: "recurring",
+      timezone: "Europe/Moscow",
+      weekdays: [1],
+      start_time: "22:00",
+      duration_minutes: 240,
+      hosts: [],
+    });
+  });
+
+  it("наблюдатель видит план без кнопок изменения", async () => {
+    mockApi({
+      "/me": me(["viewer"], ["view"]),
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/windows": [windowOut],
+      "/projects/p1/calendar": { from: "", to: "", items: [] },
+      "/windows/3/plan": windowPlan,
+    });
+    renderAt("/windows");
+    expect(await screen.findByText("закроет уязвимости")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Новое окно/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Изменить/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Снять/ })).not.toBeInTheDocument();
   });
 });

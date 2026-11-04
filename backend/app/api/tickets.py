@@ -53,6 +53,7 @@ def ticket_brief(t: Ticket, counts: dict[int, dict]) -> dict:
         "status_label": STATUSES.get(t.status, t.status),
         "is_regression": t.is_regression,
         "assignee": _user(t.assignee),
+        "window": {"id": t.window.id, "name": t.window.name} if t.window_id and t.window else None,
         "reboot": bool((t.action or {}).get("reboot")),
         "hosts_total": c.get("hosts", 0),
         "hosts_confirmed": c.get("confirmed", 0),
@@ -125,6 +126,7 @@ def list_tickets(
     kind: list[str] | None = Query(default=None),
     os: list[str] | None = Query(default=None),
     assignee: str | None = None,
+    window: str | None = None,
     host: str | None = None,
     q: str | None = Query(default=None, max_length=200),
     sort: str = Query(default="priority", pattern="^(priority|severity|created|updated|title|hosts)$"),
@@ -135,7 +137,11 @@ def list_tickets(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     get_project(db, project_id, p)
-    stmt = select(Ticket).where(Ticket.project_id == project_id).options(selectinload(Ticket.assignee))
+    stmt = (
+        select(Ticket)
+        .where(Ticket.project_id == project_id)
+        .options(selectinload(Ticket.assignee), selectinload(Ticket.window))
+    )
     if status:
         stmt = stmt.where(Ticket.status.in_(status))
     if state == "open":
@@ -156,6 +162,14 @@ def list_tickets(
         if not assignee.isdigit():
             raise HTTPException(422, "assignee: id пользователя, me или none")
         stmt = stmt.where(Ticket.assignee_id == int(assignee))
+    if window == "none":
+        stmt = stmt.where(Ticket.window_id.is_(None))
+    elif window == "any":
+        stmt = stmt.where(Ticket.window_id.is_not(None))
+    elif window:
+        if not window.isdigit():
+            raise HTTPException(422, "window: id окна, any или none")
+        stmt = stmt.where(Ticket.window_id == int(window))
     if host:
         stmt = stmt.where(Ticket.id.in_(select(TicketHost.ticket_id).where(TicketHost.host == host.strip())))
     if q and q.strip():
@@ -296,6 +310,9 @@ def _can(t: Ticket, p: Principal, verifying: bool = False) -> dict:
         "override": p.can(Perm.TICKET_OVERRIDE),
         "comment": p.can(Perm.TICKET_WORK),
         "verify": p.can(Perm.VERIFY) and not closed and not verifying,
+        # Поставить в окно или снять с окна: исполнитель заявки или руководитель.
+        "window": not closed
+        and (p.can(Perm.TICKET_ASSIGN) or (p.can(Perm.TICKET_WORK) and t.assignee_id == p.user.id)),
     }
 
 

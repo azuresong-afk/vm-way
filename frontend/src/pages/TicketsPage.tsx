@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowRightLeft, ClipboardList, Search, UserPlus, X } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, ClipboardList, Search, UserPlus, X } from "lucide-react";
 import { api } from "../api/client";
 import type { BulkOut, Severity, TicketQuery, TicketStatus } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { projectLabel, useProject } from "../auth/ProjectContext";
 import { Pager } from "../components/Pager";
-import { AssigneeSelect } from "../components/TicketActions";
+import { AssigneeSelect, WindowSelect } from "../components/TicketActions";
 import { TicketDrawer } from "../components/TicketDrawer";
 import { TicketsTable } from "../components/TicketsTable";
 import { Empty, ErrorAlert, Loading, Modal } from "../components/ui";
@@ -33,6 +33,7 @@ function useFilters() {
     os: get("os"),
     assignee: get("assignee"),
     host: get("host"),
+    window: get("window"),
     q: get("q"),
     sort: SORTS.includes(sortParam) ? sortParam : ("priority" as SortKey),
     order: (get("order") === "desc" ? "desc" : "asc") as "asc" | "desc",
@@ -60,6 +61,7 @@ function useFilters() {
     os: f.os ? [f.os] : undefined,
     assignee: f.assignee || undefined,
     host: f.host || undefined,
+    window: f.window || undefined,
     q: f.q || undefined,
     sort: f.sort,
     order: f.order,
@@ -78,11 +80,12 @@ function BulkModal({
 }: {
   projectId: string;
   ids: number[];
-  mode: "assign" | "status";
+  mode: "assign" | "status" | "window";
   onClose: () => void;
   onDone: (r: BulkOut) => void;
 }) {
   const [who, setWho] = useState<number | null>(null);
+  const [win, setWin] = useState<number | null>(null);
   const [status, setStatus] = useState<TicketStatus>("in_progress");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -97,7 +100,9 @@ function BulkModal({
       const r =
         mode === "assign"
           ? await api.bulk(projectId, { ticket_ids: ids, action: "assign", assignee_id: who })
-          : await api.bulk(projectId, { ticket_ids: ids, action: "status", status, reason: reason.trim() || undefined });
+          : mode === "window"
+            ? await api.bulk(projectId, { ticket_ids: ids, action: "window", window_id: win })
+            : await api.bulk(projectId, { ticket_ids: ids, action: "status", status, reason: reason.trim() || undefined });
       onDone(r);
     } catch (e) {
       setError((e as Error).message);
@@ -108,7 +113,7 @@ function BulkModal({
   const n = `${fmtNumber(ids.length)} ${plural(ids.length, ["заявку", "заявки", "заявок"])}`;
   return (
     <Modal
-      title={mode === "assign" ? `Назначить ${n}` : `Перевести ${n}`}
+      title={mode === "assign" ? `Назначить ${n}` : mode === "window" ? `Поставить в окно ${n}` : `Перевести ${n}`}
       onClose={onClose}
       footer={
         <>
@@ -126,7 +131,15 @@ function BulkModal({
         </>
       }
     >
-      {mode === "assign" ? (
+      {mode === "window" ? (
+        <label className="field">
+          <span>Окно обслуживания</span>
+          <WindowSelect projectId={projectId} value={win} onChange={setWin} />
+          <small>
+            «— без окна —» снимет заявки с окна. Назначенные заявки перейдут в «Ожидает окна»; заявки без хостов в охвате окна и закрытые — с причиной отказа.
+          </small>
+        </label>
+      ) : mode === "assign" ? (
         <label className="field">
           <span>Исполнитель</span>
           <AssigneeSelect projectId={projectId} value={who} onChange={setWho} />
@@ -168,7 +181,9 @@ export function TicketsPage({ mine }: { mine?: boolean }) {
   const facets = useAsync(() => api.ticketFacets(projectId), [projectId]);
   const [open, setOpen] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [bulk, setBulk] = useState<"assign" | "status" | null>(null);
+  const [bulk, setBulk] = useState<"assign" | "status" | "window" | null>(null);
+  const wins = useAsync(() => api.windows(projectId), [projectId]);
+  const workWindows = (wins.data ?? []).filter((w) => w.kind !== "blackout");
   const [bulkResult, setBulkResult] = useState<BulkOut | null>(null);
   const [text, setText] = useState(f.q);
   const canBulk = has("ticket_assign") && !mine;
@@ -201,7 +216,7 @@ export function TicketsPage({ mine }: { mine?: boolean }) {
     const cur = f[k] as string[];
     set({ [k]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] });
   };
-  const hasFilters = f.severity.length || f.kind.length || f.os || f.assignee || f.host || f.q || f.scope !== "open";
+  const hasFilters = f.severity.length || f.kind.length || f.os || f.assignee || f.host || f.window || f.q || f.scope !== "open";
   const total = page.data?.total ?? 0;
   const ids = useMemo(() => [...selected], [selected]);
 
@@ -222,6 +237,9 @@ export function TicketsPage({ mine }: { mine?: boolean }) {
             </button>
             <button type="button" className="btn" onClick={() => setBulk("status")}>
               <ArrowRightLeft size={15} aria-hidden="true" /> Перевести
+            </button>
+            <button type="button" className="btn" onClick={() => setBulk("window")}>
+              <CalendarClock size={15} aria-hidden="true" /> В окно
             </button>
             <button type="button" className="btn btn-ghost" onClick={() => setSelected(new Set())}>
               Снять выбор
@@ -284,6 +302,18 @@ export function TicketsPage({ mine }: { mine?: boolean }) {
               <option value="none">Без исполнителя</option>
             </select>
           )}
+          {workWindows.length > 0 && (
+            <select className="select" aria-label="Окно" value={f.window} onChange={(e) => set({ window: e.target.value })}>
+              <option value="">Все окна</option>
+              <option value="none">Без окна</option>
+              <option value="any">В любом окне</option>
+              {workWindows.map((w) => (
+                <option key={w.id} value={String(w.id)}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          )}
           {(facets.data?.os.length ?? 0) > 1 && (
             <select className="select" aria-label="ОС" value={f.os} onChange={(e) => set({ os: e.target.value })}>
               <option value="">Все ОС</option>
@@ -323,7 +353,7 @@ export function TicketsPage({ mine }: { mine?: boolean }) {
             </button>
           )}
           {hasFilters ? (
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ severity: [], kind: [], os: null, assignee: null, host: null, q: null, status: null, state: null })}>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ severity: [], kind: [], os: null, assignee: null, host: null, window: null, q: null, status: null, state: null })}>
               Сбросить
             </button>
           ) : null}

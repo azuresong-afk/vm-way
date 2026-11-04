@@ -34,6 +34,10 @@ import type {
   UserPatch,
   VerificationOut,
   VulnOut,
+  CalendarItem,
+  WindowIn,
+  WindowOut,
+  WindowPlanOut,
 } from "./types";
 
 export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
@@ -188,8 +192,27 @@ export const api = {
     ),
   bulk: (
     projectId: string,
-    data: { ticket_ids: number[]; action: "assign" | "status"; assignee_id?: number | null; status?: TicketStatus; reason?: string },
+    data: {
+      ticket_ids: number[];
+      action: "assign" | "status" | "window";
+      assignee_id?: number | null;
+      status?: TicketStatus;
+      reason?: string;
+      window_id?: number | null;
+    },
   ) => json<BulkOut>(`/projects/${enc(projectId)}/tickets/bulk`, post(data)),
+  placeInWindow: (id: number, windowId: number | null) =>
+    json<TicketBrief>(`/tickets/${id}/window`, post({ window_id: windowId })),
+  windows: (projectId: string) => json<WindowOut[]>(`/projects/${enc(projectId)}/windows`),
+  createWindow: (projectId: string, data: WindowIn) => json<WindowOut>(`/projects/${enc(projectId)}/windows`, post(data)),
+  updateWindow: (id: number, data: Partial<WindowIn>) =>
+    json<WindowOut>(`/windows/${id}`, { method: "PATCH", ...body(data) }),
+  deleteWindow: (id: number) => json<void>(`/windows/${id}`, { method: "DELETE" }),
+  windowPlan: (id: number, at?: string) => json<WindowPlanOut>(`/windows/${id}/plan${listQuery({ at })}`),
+  calendar: (projectId: string, from?: string, to?: string) =>
+    json<{ from: string; to: string; items: CalendarItem[] }>(
+      `/projects/${enc(projectId)}/calendar${listQuery({ from, to })}`,
+    ),
   assignable: (projectId: string) => json<AssignableUser[]>(`/users/assignable?project_id=${enc(projectId)}`),
   vulnerabilities: (projectId: string, query: { ticket_id?: number; state?: string; limit?: number; offset?: number }) =>
     page<VulnOut>(`/projects/${enc(projectId)}/vulnerabilities${listQuery(query)}`),

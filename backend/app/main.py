@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import bootstrap, jobs
-from app.api import audit_log, auth, meta, projects, sources, summary, ticket_work, tickets, users
+from app.api import audit_log, auth, meta, projects, sources, summary, ticket_work, tickets, users, windows
 from app.config import get_settings
 from app.db import SessionLocal
 from app.services import importer, verification  # noqa: F401 — регистрируют обработчики задач
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
         sources.router,
         tickets.router,
         ticket_work.router,
+        windows.router,
         summary.router,
         audit_log.router,
     ):

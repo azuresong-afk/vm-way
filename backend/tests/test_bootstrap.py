@@ -2,7 +2,7 @@ from sqlalchemy import select
 
 from app import bootstrap
 from app.config import get_settings
-from app.models import AuditLog, Project, ScannerSource, SourceLink, User
+from app.models import AuditLog, MaintenanceWindow, Project, ScannerSource, SourceLink, User
 
 
 def test_first_admin_created_once(db, monkeypatch):
@@ -36,3 +36,5 @@ def test_demo_seed_idempotent(db, monkeypatch):
     assert [s.base_url for s in db.scalars(select(ScannerSource))] == ["mock://demo"]
     assert [lk.engagement_id for lk in db.scalars(select(SourceLink))] == [7]
     assert {u.username for u in db.scalars(select(User))} == {"manager", "engineer", "engineer2", "viewer"}
+    windows = db.scalars(select(MaintenanceWindow).order_by(MaintenanceWindow.id)).all()
+    assert [(w.name, w.kind) for w in windows] == [("Ночное окно", "recurring"), ("Новогодняя заморозка", "blackout")]
