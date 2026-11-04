@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -25,6 +26,7 @@ from app.audit_guard import create_audit_guard  # noqa: E402
 from app.db import Base  # noqa: E402
 from app.integrations.scanner import MockScanner  # noqa: E402
 from app.models import User  # noqa: E402
+from app.schema import head_revision  # noqa: E402
 from app.security import hash_password  # noqa: E402
 
 PASSWORD = "correct-horse-battery"
@@ -37,6 +39,9 @@ def db_url(tmp_path):
     Base.metadata.create_all(dbmod.engine)
     with dbmod.engine.begin() as conn:
         create_audit_guard(conn)
+        # Схема создана по моделям — помечаем её последней миграцией, как после alembic upgrade.
+        conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"))
+        conn.execute(text("INSERT INTO alembic_version VALUES (:v)"), {"v": head_revision()})
     MockScanner.reset()
     yield url
     dbmod.engine.dispose()

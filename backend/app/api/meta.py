@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app import schema
 from app.config import get_settings
 from app.db import get_db
 from app.rbac import ROLES
@@ -41,8 +42,13 @@ def live() -> dict:
 
 @router.get("/health/ready")
 def ready(db: Session = Depends(get_db)) -> dict:
+    """Готов к работе: БД доступна и схема на последней миграции."""
     try:
         db.execute(text("SELECT 1"))
+        current = schema.current_revision(db)
     except Exception:
         raise HTTPException(503, "БД недоступна")
+    head = schema.head_revision()
+    if current != head:
+        raise HTTPException(503, f"Схема БД не на последней миграции: {current or 'нет'}, нужна {head}")
     return {"status": "ok"}

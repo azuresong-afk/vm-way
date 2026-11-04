@@ -4,9 +4,35 @@
 
 Архитектура, модель данных, API и план по задачам — в [docs/roadmap.md](docs/roadmap.md).
 
+## Быстрый старт (Docker)
+
+Нужны Docker Engine 24+ с Compose v2 и `openssl`.
+
+```bash
+scripts/gen-env.sh                # .env со случайными секретами, печатает пароль администратора
+docker compose up --build -d      # app (API), web (nginx), db (PostgreSQL 16)
+scripts/smoke.sh                  # проверка стека через веб
+```
+
+Интерфейс — `http://localhost:18081`, вход — администратор из `.env`. Порты меняются в `.env` (`VM_WEB_PORT`, `VM_API_PORT`, `VM_DB_PORT`); API и БД слушают только `127.0.0.1`.
+
+Демо-стенд без настоящего «Сканера» (встроенный мок: 3 ОС, 20 хостов, три плановых прогона; пользователи `manager`, `engineer`, `engineer2`, `viewer`):
+
+```bash
+scripts/gen-env.sh --demo && docker compose up --build -d
+```
+
+| Документ | О чём |
+|---|---|
+| [docs/INSTALL.md](docs/INSTALL.md) | установка, `.env`, подключение «Сканера», обновление, резервное копирование и восстановление, частые проблемы |
+| [docs/TESTING.md](docs/TESTING.md) | пошаговая ручная проверка на демо-стенде с ожидаемым результатом по каждому шагу |
+| [docs/roadmap.md](docs/roadmap.md) | архитектура, модель данных, API, решения и план по задачам |
+
+Резервная копия и восстановление: `scripts/backup.sh`, `scripts/restore.sh КАТАЛОГ --yes`.
+
 ## Состояние
 
-Идёт этап 1 (MVP), задачи выполняются по одной, каждая — отдельным PR.
+Этап 1 (MVP) готов. Задачи выполнялись по одной, каждая — отдельным PR.
 
 - [x] 1.1 Каркас бэкенда: модели, миграция `0001`, вход, роли, журнал аудита, манифест, health
 - [x] 1.2 Адаптер «Сканера» (HTTP и мок API) и демо-фикстура: 3 ОС, 20 хостов, три плановых прогона; формы ответов сверены с кодом «Сканера» (`backend/tests/scanner_contract.py`)
@@ -15,29 +41,22 @@
 - [x] 1.5 Назначение, статусы, комментарии, история, массовые действия
 - [x] 1.6 Повторная проверка прицельным прогоном и автозакрытие, регрессии
 - [x] 1.7 Интерфейс: Сводка, Заявки, Заявка, Мои задачи, Администрирование; светлая и тёмная тема, телефон
-- [ ] 1.8 Docker Compose, CI, документация
+- [x] 1.8 Docker Compose, CI, документация
 
-## Бэкенд: запуск тестов
+Дальше — этап 2 (окна обслуживания, правила назначения, раскатка, исключения), см. [docs/roadmap.md](docs/roadmap.md#6-этапы).
+
+## Разработка
+
+Бэкенд (Python 3.12):
 
 ```bash
 cd backend
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-ruff check . && pytest -q
+ruff check . && ruff format --check . && pytest -q
 # Миграции на PostgreSQL (необязательно):
 VM_TEST_PG_URL=postgresql+psycopg://vm:vm@127.0.0.1:5432/vm pytest -q tests/test_migrations.py
 ```
-
-Запуск API локально (без Docker, на SQLite):
-
-```bash
-cd backend
-export VM_SECRET_KEY=dev-secret VM_ENCRYPTION_KEY=$(python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())")
-export VM_DATABASE_URL=sqlite:///./vm.db VM_ADMIN_PASSWORD=admin-password-1
-alembic upgrade head && uvicorn app.main:app --reload
-```
-
-С `VM_DEMO=1` при старте создаются демо-проект, источник `mock://demo` с привязкой и пользователи `manager`, `engineer`, `engineer2`, `viewer` (пароль — `VM_DEMO_PASSWORD`). Опрос источника сразу импортирует три плановых прогона.
 
 Демо-фикстура «Сканера» генерируется скриптом и проверяется в CI на совпадение:
 
@@ -45,7 +64,7 @@ alembic upgrade head && uvicorn app.main:app --reload
 python -m app.integrations.scanner.fixtures.generate > app/integrations/scanner/fixtures/demo.json
 ```
 
-## Фронтенд
+Фронтенд (Node 22):
 
 ```bash
 cd frontend
@@ -54,6 +73,4 @@ npm run lint && npm run typecheck && npm test
 npm run dev   # http://localhost:5174, /api проксируется на API :8000 (VM_API_URL)
 ```
 
-Демо-вход при `VM_DEMO=1`: `manager`, `engineer`, `engineer2`, `viewer` с паролем `VM_DEMO_PASSWORD`; администратор — `VM_ADMIN_USERNAME` / `VM_ADMIN_PASSWORD`.
-
-Docker Compose и полная документация (`docs/INSTALL.md`, `docs/TESTING.md`) появятся в задаче 1.8.
+Запуск API без Docker — [docs/INSTALL.md, раздел 10](docs/INSTALL.md#10-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов и проверка всего стека `docker compose up`.
