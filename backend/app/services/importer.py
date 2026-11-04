@@ -54,11 +54,24 @@ def fetch_results(client: ScannerClient, scanner_run_id: int) -> RunResults:
     )
 
 
-def apply_results(db: Session, project: Project, run: ScanRun, results: RunResults) -> dict:
-    """Перенос результатов в «Устранение»: зеркало уязвимостей и заявки (задача 1.4)."""
-    from app.services import mirror
+def apply_results(
+    db: Session,
+    project: Project,
+    run: ScanRun,
+    results: RunResults,
+    *,
+    targets: list[str] | None = None,
+    strict_tickets: list[int] | None = None,
+) -> dict:
+    """Перенос результатов в «Устранение»: зеркало уязвимостей и заявки (задача 1.4), затем закрытие
+    исправленного и регрессии по покрытию прогона (задача 1.6)."""
+    from app.services import closure, mirror
 
-    return mirror.apply(db, project, run, results.findings, results.fixes)
+    stats = mirror.apply(db, project, run, results.findings, results.fixes)
+    stats |= closure.apply(
+        db, project, run, results.findings, results.coverage, targets=targets or [], strict_tickets=strict_tickets or []
+    )
+    return stats
 
 
 def import_run(
@@ -69,8 +82,12 @@ def import_run(
     actor: User | None = None,
     kind: str = "scheduled",
     client: ScannerClient | None = None,
+    targets: list[str] | None = None,
+    strict_tickets: list[int] | None = None,
 ) -> tuple[ScanRun, bool]:
-    """Импортирует один прогон. Возвращает (запись прогона, создана ли она сейчас)."""
+    """Импортирует один прогон. Возвращает (запись прогона, создана ли она сейчас).
+
+    targets и strict_tickets — для прицельной проверки (см. closure.apply)."""
     existing = db.scalar(
         select(ScanRun).where(ScanRun.source_id == link.source_id, ScanRun.scanner_run_id == scanner_run_id)
     )
@@ -122,7 +139,10 @@ def import_run(
                 run_id=run.id, host=c["host"], module=c["module"], status=c["status"], reason=c.get("reason") or ""
             )
         )
-    run.stats = {**run.stats, **apply_results(db, project, run, results)}
+    run.stats = {
+        **run.stats,
+        **apply_results(db, project, run, results, targets=targets, strict_tickets=strict_tickets),
+    }
     audit.record(
         db,
         actor,

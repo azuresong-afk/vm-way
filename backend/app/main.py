@@ -9,7 +9,7 @@ from app import bootstrap, jobs
 from app.api import audit_log, auth, meta, projects, sources, ticket_work, tickets, users
 from app.config import get_settings
 from app.db import SessionLocal
-from app.services import importer  # noqa: F401 — регистрирует обработчики задач
+from app.services import importer, verification  # noqa: F401 — регистрируют обработчики задач
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 

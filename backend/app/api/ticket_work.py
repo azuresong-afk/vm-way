@@ -1,5 +1,5 @@
 """Работа с заявкой (задача 1.5): взять, назначить, перевести, переопределить уровень,
-комментировать, наблюдать, массовые действия."""
+комментировать, наблюдать, массовые действия. Повторная проверка — задача 1.6."""
 
 from typing import Literal
 
@@ -8,14 +8,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import audit
+from app import audit, jobs
 from app.api.common import not_found
 from app.api.tickets import _counts, ticket_brief
 from app.db import get_db
 from app.deps import Principal, get_project, require
-from app.models import Ticket
+from app.models import Ticket, Verification
 from app.rbac import Perm
-from app.services import workflow
+from app.services import verification, workflow
 from app.services.workflow import Actor, WorkflowError
 
 router = APIRouter(tags=["tickets"])
@@ -165,6 +165,57 @@ def watch(
     workflow.set_watch(db, t, _actor(p), on)
     db.commit()
     return {"ticket_id": t.id, "watching": on}
+
+
+class VerifyIn(BaseModel):
+    hosts: list[str] | None = Field(default=None, max_length=1024)
+    # «Исправлено — проверить»: перевести заявку в «Исправлено», если это разрешено пользователю.
+    mark_fixed: bool = True
+
+
+@router.post("/tickets/{ticket_id}/verify", status_code=202)
+def verify(
+    ticket_id: int,
+    body: VerifyIn | None = None,
+    p: Principal = Depends(require(Perm.VERIFY)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Повторная проверка прицельным прогоном «Сканера». Итог применяет фоновая задача."""
+    body = body or VerifyIn()
+    t = _locked(db, ticket_id, p)
+    try:
+        items = verification.request(db, t, _actor(p), body.hosts, mark_fixed=body.mark_fixed)
+    except WorkflowError as e:
+        raise _fail(e, db)
+    db.commit()
+    for v in items:
+        jobs.runner.submit(v.result["job_id"])
+    for v in items:
+        db.refresh(v)
+    return {"ticket": _out(db, t), "verifications": [verification.verification_out(v) for v in items]}
+
+
+@router.get("/tickets/{ticket_id}/verifications")
+def ticket_verifications(
+    ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: Session = Depends(get_db)
+) -> list[dict]:
+    t = db.get(Ticket, ticket_id)
+    if not t:
+        raise not_found("Заявка")
+    get_project(db, t.project_id, p)
+    rows = db.scalars(select(Verification).where(Verification.ticket_id == t.id).order_by(Verification.id.desc()))
+    return [verification.verification_out(v) for v in rows]
+
+
+@router.get("/verifications/{verification_id}")
+def read_verification(
+    verification_id: int, p: Principal = Depends(require(Perm.VIEW)), db: Session = Depends(get_db)
+) -> dict:
+    v = db.get(Verification, verification_id)
+    if not v:
+        raise not_found("Проверка")
+    get_project(db, v.project_id, p)
+    return verification.verification_out(v)
 
 
 class BulkIn(BaseModel):

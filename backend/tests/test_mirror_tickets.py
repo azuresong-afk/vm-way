@@ -49,7 +49,10 @@ def test_one_ticket_per_fix_action(client, as_, db, project):
     assert ssh.action["commands"] == ["sudo apt-get update", "sudo apt-get install --only-upgrade -y openssh-server"]
     nofix = next(t for t in tickets if t.scanner_kind == "package_nofix")
     assert nofix.status == "no_vendor_fix"
-    assert {t.status for t in tickets if t.scanner_kind != "package_nofix"} == {"new"}
+    # Остальные — «Новая»; закрытие по плановым прогонам (sudo — «Подтверждено», libexpat — «Регрессия»)
+    # проверяется в test_verification.py.
+    by_status = {t.status for t in tickets if t.scanner_kind != "package_nofix"}
+    assert by_status == {"new", "verified", "regression"}
     kernel = next(t for t in tickets if t.kind == "kernel" and t.os == "РЕД ОС 7.3")
     assert kernel.action["reboot"] is True
 
@@ -150,7 +153,8 @@ def test_tickets_api_filters_and_sort(client, as_, project):
     assert by_host and all(t["os"] in ("РЕД ОС 7.3",) for t in by_host)
     assert client.get(url, headers=h, params={"assignee": "none"}).headers["X-Total-Count"] == "14"
     assert client.get(url, headers=h, params={"assignee": "me"}).json() == []
-    assert client.get(url, headers=h, params={"state": "closed"}).json() == []
+    closed = client.get(url, headers=h, params={"state": "closed"}).json()
+    assert [(t["status"], t["cves"]) for t in closed] == [("verified", ["CVE-2023-28486"])]
     page = client.get(url, headers=h, params={"limit": 5, "offset": 10})
     assert len(page.json()) == 4 and page.headers["X-Total-Count"] == "14"
     by_num = client.get(url, headers=h, params={"q": f"№{first['id']}"}).json()
