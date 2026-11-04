@@ -17,7 +17,7 @@ export function me(roles: string[], permissions: MeOut["permissions"]): MeOut {
 }
 
 export const engineer = me(["engineer"], ["view", "import", "ticket_work", "verify"]);
-export const manager = me(["manager"], ["view", "import", "ticket_work", "ticket_assign", "ticket_override", "verify", "windows_manage", "audit_view"]);
+export const manager = me(["manager"], ["view", "import", "ticket_work", "ticket_assign", "ticket_override", "verify", "windows_manage", "rules_manage", "audit_view"]);
 
 export const brief: TicketBrief = {
   id: 5,
@@ -71,8 +71,8 @@ export const detail: TicketDetail = {
   override_reason: "",
   evidence: null,
   hosts: [
-    { id: 1, host: "10.20.3.31", installed: "2.35-6.el7", note: "", status: "confirmed", reason: "", vulnerability_ids: [], last_check: null, updated_at: "" },
-    { id: 2, host: "10.20.3.32", installed: "2.35-6.el7", note: "", status: "open", reason: "", vulnerability_ids: [], last_check: null, updated_at: "" },
+    { id: 1, host: "10.20.3.31", installed: "2.35-6.el7", note: "", status: "confirmed", reason: "", vulnerability_ids: [], asset: { id: 1, hostname: "srv-01", owner: "Группа СУБД", criticality: "high", tags: ["prod"], groups: ["Серверы приложений"] }, last_check: null, updated_at: "" },
+    { id: 2, host: "10.20.3.32", installed: "2.35-6.el7", note: "", status: "open", reason: "", vulnerability_ids: [], asset: null, last_check: null, updated_at: "" },
   ],
   vulnerabilities: [],
   watchers: [],
@@ -96,6 +96,7 @@ export const windowOut: WindowOut = {
   valid_from: null,
   valid_until: null,
   hosts: [],
+  groups: [],
   note: "",
   is_active: true,
   schedule: "вт 22:00–02:00 (Europe/Moscow)",

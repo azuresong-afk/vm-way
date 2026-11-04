@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { ChipPicker } from "./ChipPicker";
+import { useAsync } from "../lib/useAsync";
 import { Trash2 } from "lucide-react";
 import { api } from "../api/client";
 import type { WindowIn, WindowKind, WindowOut } from "../api/types";
@@ -47,6 +49,8 @@ export function WindowFormModal({
   const [startsAt, setStartsAt] = useState(isoToZoned(initial?.starts_at, tz0));
   const [endsAt, setEndsAt] = useState(isoToZoned(initial?.ends_at, tz0));
   const [hosts, setHosts] = useState((initial?.hosts ?? []).join("\n"));
+  const [groups, setGroups] = useState<string[]>(initial?.groups ?? []);
+  const facets = useAsync(() => api.assetFacets(projectId), [projectId]);
   const [note, setNote] = useState(initial?.note ?? "");
   const [active, setActive] = useState(initial?.is_active ?? true);
   const [busy, setBusy] = useState(false);
@@ -74,6 +78,7 @@ export function WindowFormModal({
       valid_from: kind === "recurring" && validFrom ? validFrom : null,
       valid_until: kind === "recurring" && validUntil ? validUntil : null,
       hosts: splitHosts(hosts),
+      groups,
       note: note.trim(),
       is_active: active,
     };
@@ -212,6 +217,14 @@ export function WindowFormModal({
             </label>
           </div>
         )}
+        <ChipPicker
+          label="Группы активов (необязательно)"
+          options={(facets.data?.groups ?? []).map((g) => ({ id: g.name, count: g.assets }))}
+          value={groups}
+          onChange={setGroups}
+          empty={facets.loading ? "Загрузка…" : "Групп нет — они приходят из «Сканера» при импорте"}
+          hint="Состав группы берётся из «Сканера» на момент расчёта плана."
+        />
         <label className="field">
           <span>Хосты (необязательно)</span>
           <textarea
@@ -223,8 +236,8 @@ export function WindowFormModal({
           />
           <small>
             {kind === "blackout"
-              ? "Пусто — изменения запрещены во всём проекте. Иначе — только на этих хостах."
-              : "Пусто — все хосты проекта. По одному на строку или через запятую."}
+              ? "Без хостов и групп — изменения запрещены во всём проекте. Иначе — только на этих хостах."
+              : "Без хостов и групп — все хосты проекта. По одному на строку или через запятую."}
           </small>
         </label>
         <label className="field">

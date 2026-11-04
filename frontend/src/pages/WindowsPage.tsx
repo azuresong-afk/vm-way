@@ -13,7 +13,10 @@ import { useAsync } from "../lib/useAsync";
 import { fmtMinutes, fmtRange, fmtZoned } from "../lib/zoned";
 
 function scopeText(w: WindowOut): string {
-  return w.hosts.length ? `${fmtNumber(w.hosts.length)} ${plural(w.hosts.length, ["хост", "хоста", "хостов"])}` : "все хосты";
+  const parts: string[] = [];
+  if (w.groups?.length) parts.push(w.groups.join(", "));
+  if (w.hosts.length) parts.push(`${fmtNumber(w.hosts.length)} ${plural(w.hosts.length, ["хост", "хоста", "хостов"])}`);
+  return parts.length ? parts.join(" + ") : "все хосты";
 }
 
 function WindowRow({ w, selected, onSelect }: { w: WindowOut; selected: boolean; onSelect: () => void }) {

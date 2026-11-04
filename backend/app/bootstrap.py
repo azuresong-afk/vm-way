@@ -109,7 +109,9 @@ def ensure_demo(db: Session) -> Project | None:
         )
     )
     db.flush()
-    # Правила назначения (задача 2.2): DMZ и серверы приложений — команде по загрузке, РЕД ОС — исполнителю.
+    # Правила назначения (задача 2.2): DMZ и серверы приложений — команде по загрузке, ядро РЕД ОС —
+    # исполнителю. Выключены: иначе импорт сразу назначит заявки и проход этапа 1 в TESTING.md
+    # («остальные — Новая») не сойдётся; правила включаются в шаге 12.
     staff = {u.username: u for u in db.scalars(select(User).where(User.username.in_(["engineer", "engineer2"])))}
     if len(staff) == 2:
         team = db.scalar(select(Team).where(Team.name == "Веб-сервисы"))
@@ -122,6 +124,7 @@ def ensure_demo(db: Session) -> Project | None:
                 project_id=pr.id,
                 position=1,
                 name="DMZ и приложения — команде веб-сервисов",
+                is_active=False,
                 groups=["DMZ", "Серверы приложений"],
                 team_id=team.id,
             )
@@ -131,6 +134,7 @@ def ensure_demo(db: Session) -> Project | None:
                 project_id=pr.id,
                 position=2,
                 name="Ядро РЕД ОС — Ковалёву",
+                is_active=False,
                 os=["РЕД ОС 7.3"],
                 kinds=["kernel"],
                 assignee_id=staff["engineer2"].id,

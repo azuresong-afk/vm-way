@@ -23,6 +23,7 @@ export type Perm =
   | "ticket_override"
   | "verify"
   | "windows_manage"
+  | "rules_manage"
   | "projects_manage"
   | "sources_manage"
   | "users_manage"
@@ -144,6 +145,7 @@ export interface TicketHostOut {
   status: HostStatus;
   reason: string;
   vulnerability_ids: number[];
+  asset: AssetBrief | null;
   last_check: { run_id: number; scanner_run_id: number; finished_at: string | null } | null;
   updated_at: string;
 }
@@ -266,6 +268,7 @@ export interface TicketQuery {
   assignee?: string;
   window?: string;
   host?: string;
+  group?: string;
   q?: string;
   sort?: "priority" | "severity" | "created" | "updated" | "title" | "hosts";
   order?: "asc" | "desc";
@@ -276,6 +279,7 @@ export interface TicketQuery {
 export interface TicketFacets {
   os: { id: string; total: number; open: number }[];
   kinds: { id: string; total: number; open: number }[];
+  groups: { id: string; total: number; open: number }[];
 }
 
 export interface AssignableUser extends UserRef {
@@ -527,6 +531,7 @@ export interface WindowIn {
   valid_from: string | null;
   valid_until: string | null;
   hosts: string[];
+  groups: string[];
   note: string;
   is_active: boolean;
 }
@@ -578,4 +583,114 @@ export interface WindowPlanOut {
   plan: WindowPlan | null;
   prev: string | null;
   next: string | null;
+}
+
+// --- Активы и правила назначения (задача 2.2) ---
+
+export type Criticality = "critical" | "high" | "medium" | "low";
+
+export interface AssetBrief {
+  id: number;
+  hostname: string;
+  owner: string;
+  criticality: Criticality;
+  tags: string[];
+  groups: string[];
+}
+
+export interface AssetOut extends AssetBrief {
+  address: string;
+  os_family: string;
+  os_guess: string;
+  engagement_id: number;
+  scanner_asset_id: number;
+  open_tickets: number;
+  synced_at: string;
+}
+
+export interface AssetFacets {
+  total: number;
+  synced_at: string | null;
+  groups: { name: string; assets: number; open_tickets: number }[];
+  tags: { name: string; assets: number }[];
+  owners: { name: string; assets: number }[];
+  criticality: Record<Criticality, number>;
+}
+
+export interface AssetQuery {
+  group?: string;
+  tag?: string;
+  owner?: string;
+  criticality?: Criticality;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AssetSyncOut {
+  assets: number;
+  created: number;
+  updated: number;
+  removed: number;
+  groups: number;
+  groups_removed: number;
+  errors: { link_id: number; engagement_id: number; error: string }[];
+}
+
+export type HostMatch = "all" | "any";
+
+export interface RuleIn {
+  name: string;
+  is_active: boolean;
+  groups: string[];
+  tags: string[];
+  owners: string[];
+  os: string[];
+  kinds: string[];
+  host_match: HostMatch;
+  assignee_id: number | null;
+  team_id: number | null;
+}
+
+export interface RuleOut extends Omit<RuleIn, "assignee_id" | "team_id"> {
+  id: number;
+  project_id: string;
+  position: number;
+  assignee: { id: number; display_name: string; available: boolean } | null;
+  team: { id: number; name: string; members: number } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamMemberOut {
+  id: number;
+  username: string;
+  display_name: string;
+  available: boolean;
+}
+
+export interface TeamOut {
+  id: number;
+  name: string;
+  members: TeamMemberOut[];
+  rules: number;
+  created_at: string;
+}
+
+export interface RuleDecision {
+  ticket_id: number;
+  title: string;
+  severity: Severity;
+  kind: string;
+  os: string;
+  rule: { id: number; name: string } | null;
+  assignee: { id: number; display_name: string } | null;
+  note: string;
+}
+
+export interface RulesApplyOut {
+  dry_run: boolean;
+  tickets: number;
+  assigned: number;
+  items: RuleDecision[];
 }

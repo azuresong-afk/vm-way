@@ -106,6 +106,9 @@ describe("заявка", () => {
     renderAt("/tickets/5");
     expect(await screen.findByText("sudo yum update -y glibc")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Копировать/ }).length).toBe(2);
+    // Актив хоста из «Сканера»: имя, критичность, группа со ссылкой на фильтр заявок.
+    expect(screen.getByText("srv-01")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Серверы приложений" })).toHaveAttribute("href", "/tickets?group=%D0%A1%D0%B5%D1%80%D0%B2%D0%B5%D1%80%D1%8B%20%D0%BF%D1%80%D0%B8%D0%BB%D0%BE%D0%B6%D0%B5%D0%BD%D0%B8%D0%B9");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Исправлено — проверить/ }));
     const dialog = await screen.findByRole("dialog", { name: "Повторная проверка" });
@@ -197,5 +200,173 @@ describe("окна и план", () => {
     expect(screen.queryByRole("button", { name: /Новое окно/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Изменить/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Снять/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("правила назначения и активы", () => {
+  beforeEach(() => setToken("t"));
+
+  const facets = {
+    total: 20,
+    synced_at: "2026-11-04T20:00:00Z",
+    groups: [
+      { name: "DMZ", assets: 4, open_tickets: 5 },
+      { name: "Резерв", assets: 0, open_tickets: 0 },
+    ],
+    tags: [{ name: "prod", assets: 14 }],
+    owners: [{ name: "Отдел веб-сервисов", assets: 6 }],
+    criticality: { critical: 3, high: 7, medium: 6, low: 4 },
+  };
+  const team = {
+    id: 1,
+    name: "Веб-сервисы",
+    members: [
+      { id: 2, username: "anna", display_name: "Анна", available: true },
+      { id: 3, username: "boris", display_name: "Борис", available: false },
+    ],
+    rules: 1,
+    created_at: "",
+  };
+  const rule = {
+    id: 7,
+    project_id: "p1",
+    position: 1,
+    name: "DMZ — веб-сервисам",
+    is_active: true,
+    groups: ["DMZ"],
+    tags: [],
+    owners: [],
+    os: [],
+    kinds: ["package"],
+    host_match: "all",
+    assignee: null,
+    team: { id: 1, name: "Веб-сервисы", members: 1 },
+    created_at: "",
+    updated_at: "",
+  };
+
+  it("руководитель создаёт правило: группа активов → команда по загрузке", async () => {
+    const calls = mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/rules": [],
+      "/teams": [team],
+      "/projects/p1/asset-facets": facets,
+      "/projects/p1/ticket-facets": { os: [{ id: "Debian 12", total: 5, open: 5 }], kinds: [], groups: [] },
+      "/users/assignable": [],
+      "POST /projects/p1/rules": rule,
+    });
+    renderAt("/rules");
+    expect(await screen.findByRole("heading", { name: "Правила назначения" })).toBeInTheDocument();
+    expect(await screen.findByText("Правил пока нет")).toBeInTheDocument();
+    expect(screen.getByText("Борис (не назначается)")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Новое правило/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Название"), "DMZ — веб-сервисам");
+    await user.click(await within(dialog).findByRole("button", { name: /DMZ/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Пакет" }));
+    expect(within(dialog).getByRole("radio", { name: "Для всех хостов заявки" })).toHaveAttribute("aria-checked", "true");
+    await user.click(within(dialog).getByRole("button", { name: "Создать" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/projects/p1/rules")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/projects/p1/rules")!.body).toEqual({
+      name: "DMZ — веб-сервисам",
+      is_active: true,
+      groups: ["DMZ"],
+      tags: [],
+      owners: [],
+      os: [],
+      kinds: ["package"],
+      host_match: "all",
+      assignee_id: null,
+      team_id: 1,
+    });
+  });
+
+  it("применение правил показывает предпросмотр и назначает после подтверждения", async () => {
+    const decision = (id: number, assigned: boolean) => ({
+      ticket_id: id,
+      title: `Заявка ${id}`,
+      severity: "high",
+      kind: "package",
+      os: "Debian 12",
+      rule: assigned ? { id: 7, name: rule.name } : null,
+      assignee: assigned ? { id: 2, display_name: "Анна" } : null,
+      note: assigned ? "" : "ни одно правило не подошло",
+    });
+    const calls = mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/rules": [rule],
+      "/teams": [team],
+      "POST /projects/p1/rules/apply": (_u: URL, init?: RequestInit) => {
+        const dry = JSON.parse(String(init!.body)).dry_run;
+        return { dry_run: dry, tickets: 2, assigned: 1, items: [decision(11, true), decision(12, false)] };
+      },
+    });
+    renderAt("/rules");
+    expect(await screen.findByText(rule.name)).toBeInTheDocument();
+    expect(screen.getByText("по загрузке, 1 участник")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Применить к новым заявкам/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("ни одно правило не подошло")).toBeInTheDocument();
+    expect(within(dialog).getByText("Анна")).toBeInTheDocument();
+    expect(calls.filter((c) => c.path === "/projects/p1/rules/apply").map((c) => c.body)).toEqual([{ dry_run: true }]);
+    await user.click(within(dialog).getByRole("button", { name: "Назначить 1" }));
+    expect(await within(dialog).findByText(/Назначено 1 из 2/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.path === "/projects/p1/rules/apply").map((c) => c.body)).toEqual([{ dry_run: true }, { dry_run: false }]);
+  });
+
+  it("исполнитель не видит пункта «Правила назначения», активы фильтруются по группе", async () => {
+    const calls = mockApi({
+      "/me": engineer,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/asset-facets": facets,
+      "/projects/p1/assets": [
+        {
+          id: 1,
+          address: "10.20.1.11",
+          hostname: "web-01",
+          owner: "Отдел веб-сервисов",
+          criticality: "high",
+          tags: ["prod"],
+          groups: ["DMZ"],
+          os_family: "debian",
+          os_guess: "Debian 12",
+          engagement_id: 7,
+          scanner_asset_id: 501,
+          open_tickets: 3,
+          synced_at: "",
+        },
+      ],
+      "POST /projects/p1/assets/sync": { assets: 20, created: 0, updated: 20, removed: 1, groups: 6, groups_removed: 0, errors: [] },
+    });
+    renderAt("/assets");
+    expect(await screen.findByRole("heading", { name: "Активы" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Правила назначения/ })).not.toBeInTheDocument();
+    expect(await screen.findByText("web-01 · Debian 12")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "3" })).toHaveAttribute("href", "/tickets?host=10.20.1.11");
+    const user = userEvent.setup();
+    await user.click(within(screen.getByRole("group", { name: "Фильтр по группе" })).getByRole("button", { name: /DMZ/ }));
+    await waitFor(() => expect(calls.some((c) => c.path.startsWith("/projects/p1/assets?group=DMZ"))).toBe(true));
+    await user.click(screen.getByRole("button", { name: /Обновить из «Сканера»/ }));
+    expect(await screen.findByText(/Обновлено из «Сканера»: 20 активов, удалено 1/)).toBeInTheDocument();
+  });
+
+  it("в заявках есть фильтр по группе активов", async () => {
+    const calls = mockApi({
+      "/me": engineer,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/tickets": [brief],
+      "/projects/p1/ticket-facets": { os: [], kinds: [], groups: [{ id: "DMZ", total: 3, open: 2 }] },
+    });
+    renderAt("/tickets?group=DMZ");
+    expect(await screen.findByRole("combobox", { name: "Группа активов" })).toHaveValue("DMZ");
+    await waitFor(() => expect(calls.some((c) => c.path.includes("group=DMZ"))).toBe(true));
   });
 });

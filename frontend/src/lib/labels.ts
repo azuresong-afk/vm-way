@@ -1,4 +1,4 @@
-import type { HostStatus, Severity, TicketStatus } from "../api/types";
+import type { Criticality, HostStatus, Severity, TicketStatus } from "../api/types";
 
 export const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];
 
@@ -174,3 +174,13 @@ export const PERM_LABEL: Record<string, string> = {
 export function isClosed(s: TicketStatus): boolean {
   return CLOSED_STATUSES.includes(s);
 }
+
+// Критичность актива — подписи как в «Сканере» (web/src/lib/labels.ts).
+export const CRITICALITIES: Criticality[] = ["critical", "high", "medium", "low"];
+
+export const CRITICALITY_LABEL: Record<Criticality, string> = {
+  critical: "Критическая",
+  high: "Высокая",
+  medium: "Средняя",
+  low: "Низкая",
+};

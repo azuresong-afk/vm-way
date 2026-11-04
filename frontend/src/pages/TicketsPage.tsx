@@ -34,6 +34,7 @@ function useFilters() {
     assignee: get("assignee"),
     host: get("host"),
     window: get("window"),
+    group: get("group"),
     q: get("q"),
     sort: SORTS.includes(sortParam) ? sortParam : ("priority" as SortKey),
     order: (get("order") === "desc" ? "desc" : "asc") as "asc" | "desc",
@@ -62,6 +63,7 @@ function useFilters() {
     assignee: f.assignee || undefined,
     host: f.host || undefined,
     window: f.window || undefined,
+    group: f.group || undefined,
     q: f.q || undefined,
     sort: f.sort,
     order: f.order,
@@ -216,7 +218,7 @@ export function TicketsPage({ mine }: { mine?: boolean }) {
     const cur = f[k] as string[];
     set({ [k]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] });
   };
-  const hasFilters = f.severity.length || f.kind.length || f.os || f.assignee || f.host || f.window || f.q || f.scope !== "open";
+  const hasFilters = f.severity.length || f.kind.length || f.os || f.assignee || f.host || f.window || f.group || f.q || f.scope !== "open";
   const total = page.data?.total ?? 0;
   const ids = useMemo(() => [...selected], [selected]);
 
@@ -314,6 +316,17 @@ export function TicketsPage({ mine }: { mine?: boolean }) {
               ))}
             </select>
           )}
+          {((facets.data?.groups?.length ?? 0) > 0 || f.group) && (
+            <select className="select" aria-label="Группа активов" value={f.group} onChange={(e) => set({ group: e.target.value })}>
+              <option value="">Все группы активов</option>
+              {f.group && !facets.data?.groups?.some((g) => g.id === f.group) && <option value={f.group}>{f.group}</option>}
+              {(facets.data?.groups ?? []).map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.id} · {g.open}
+                </option>
+              ))}
+            </select>
+          )}
           {(facets.data?.os.length ?? 0) > 1 && (
             <select className="select" aria-label="ОС" value={f.os} onChange={(e) => set({ os: e.target.value })}>
               <option value="">Все ОС</option>
@@ -353,7 +366,7 @@ export function TicketsPage({ mine }: { mine?: boolean }) {
             </button>
           )}
           {hasFilters ? (
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ severity: [], kind: [], os: null, assignee: null, host: null, window: null, q: null, status: null, state: null })}>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ severity: [], kind: [], os: null, assignee: null, host: null, window: null, group: null, q: null, status: null, state: null })}>
               Сбросить
             </button>
           ) : null}

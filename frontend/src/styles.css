@@ -917,3 +917,18 @@ a.kpi-mini:hover { color: var(--accent-text); text-decoration: none; }
   .plan-row, .plan-axis { grid-template-columns: 1fr; gap: 4px; }
   .plan-axis > span:first-child { display: none; }
 }
+
+/* Активы и правила назначения (задача 2.2) */
+.asset-cell { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rule-cond { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; font-size: 12.5px; }
+.rule-cond .faint { margin-right: 2px; }
+.rule-off { opacity: .55; }
+.rule-order { display: inline-flex; flex-direction: column; gap: 2px; }
+.rule-order .btn { height: 22px; padding: 0 6px; }
+.picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.picker .chip { max-width: 100%; }
+.picker-count { font-size: 11.5px; color: var(--text-3); }
+.group-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 16px; }
+.team-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--border); }
+.team-row:first-child { border-top: 0; }
+.team-members { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

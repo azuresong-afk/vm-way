@@ -1,6 +1,10 @@
 // Тонкий клиент REST API «Устранения»: Bearer-токен, разбор ошибок FastAPI.
 
 import type {
+  AssetFacets,
+  AssetOut,
+  AssetQuery,
+  AssetSyncOut,
   AssignableUser,
   AuditFilters,
   AuditOut,
@@ -14,6 +18,9 @@ import type {
   ProjectIn,
   ProjectOut,
   RolesOut,
+  RuleIn,
+  RuleOut,
+  RulesApplyOut,
   RunOut,
   SearchOut,
   Severity,
@@ -21,6 +28,7 @@ import type {
   SourceOut,
   SourceTestOut,
   SummaryOut,
+  TeamOut,
   TicketBrief,
   TicketDetail,
   TicketFacets,
@@ -213,6 +221,23 @@ export const api = {
     json<{ from: string; to: string; items: CalendarItem[] }>(
       `/projects/${enc(projectId)}/calendar${listQuery({ from, to })}`,
     ),
+  assets: (projectId: string, query: AssetQuery) =>
+    page<AssetOut>(`/projects/${enc(projectId)}/assets${listQuery(query)}`),
+  assetFacets: (projectId: string) => json<AssetFacets>(`/projects/${enc(projectId)}/asset-facets`),
+  syncAssets: (projectId: string) => json<AssetSyncOut>(`/projects/${enc(projectId)}/assets/sync`, post()),
+  rules: (projectId: string) => json<RuleOut[]>(`/projects/${enc(projectId)}/rules`),
+  createRule: (projectId: string, data: RuleIn) => json<RuleOut>(`/projects/${enc(projectId)}/rules`, post(data)),
+  updateRule: (id: number, data: Partial<RuleIn>) => json<RuleOut>(`/rules/${id}`, { method: "PATCH", ...body(data) }),
+  deleteRule: (id: number) => json<void>(`/rules/${id}`, { method: "DELETE" }),
+  reorderRules: (projectId: string, ids: number[]) =>
+    json<RuleOut[]>(`/projects/${enc(projectId)}/rules/order`, { method: "PUT", ...body({ ids }) }),
+  applyRules: (projectId: string, dryRun: boolean) =>
+    json<RulesApplyOut>(`/projects/${enc(projectId)}/rules/apply`, post({ dry_run: dryRun })),
+  teams: () => json<TeamOut[]>("/teams"),
+  createTeam: (data: { name: string; member_ids: number[] }) => json<TeamOut>("/teams", post(data)),
+  updateTeam: (id: number, data: { name?: string; member_ids?: number[] }) =>
+    json<TeamOut>(`/teams/${id}`, { method: "PATCH", ...body(data) }),
+  deleteTeam: (id: number) => json<void>(`/teams/${id}`, { method: "DELETE" }),
   assignable: (projectId: string) => json<AssignableUser[]>(`/users/assignable?project_id=${enc(projectId)}`),
   vulnerabilities: (projectId: string, query: { ticket_id?: number; state?: string; limit?: number; offset?: number }) =>
     page<VulnOut>(`/projects/${enc(projectId)}/vulnerabilities${listQuery(query)}`),

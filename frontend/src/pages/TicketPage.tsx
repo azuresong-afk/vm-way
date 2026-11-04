@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import type { CommentOut, HistoryEntry, TicketDetail, TicketStatus, VerificationOut } from "../api/types";
 import { HostsProgress } from "../components/TicketsTable";
 import { TicketActions } from "../components/TicketActions";
-import { Commands, Empty, ErrorAlert, HostStatusPill, Loading, RefTags, SeverityBadge, StatusPill } from "../components/ui";
+import { Commands, CriticalityBadge, Empty, ErrorAlert, HostStatusPill, Loading, RefTags, SeverityBadge, StatusPill } from "../components/ui";
 import { fmtDate, fmtDay, fmtNumber, plural } from "../lib/format";
 import {
   KIND_LABEL,
@@ -124,6 +124,7 @@ function Hosts({ t }: { t: TicketDetail }) {
           <thead>
             <tr>
               <th>Хост</th>
+              <th>Актив</th>
               <th>Установлено</th>
               <th>Статус</th>
               <th>Причина</th>
@@ -133,7 +134,25 @@ function Hosts({ t }: { t: TicketDetail }) {
           <tbody>
             {t.hosts.map((h) => (
               <tr key={h.id}>
-                <td className="mono nowrap">{h.host}</td>
+                <td className="nowrap">
+                  <span className="mono">{h.host}</span>
+                  {h.asset?.hostname && <div className="faint">{h.asset.hostname}</div>}
+                </td>
+                <td style={{ minWidth: 160 }}>
+                  {h.asset ? (
+                    <span className="asset-cell">
+                      <CriticalityBadge value={h.asset.criticality} />
+                      {h.asset.groups.map((g) => (
+                        <Link key={g} className="tag tag-muted" to={`/tickets?group=${encodeURIComponent(g)}`}>
+                          {g}
+                        </Link>
+                      ))}
+                      {h.asset.owner && <span className="faint">{h.asset.owner}</span>}
+                    </span>
+                  ) : (
+                    <span className="faint" title="Хоста нет среди активов «Сканера»">—</span>
+                  )}
+                </td>
                 <td className="mono">{h.installed || <span className="faint">—</span>}</td>
                 <td>
                   <HostStatusPill status={h.status} />
