@@ -7,8 +7,19 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.common import not_found, paginate
 from app.db import get_db
 from app.deps import Principal, get_project, require
-from app.models import Comment, ScanRun, Ticket, TicketHistory, TicketHost, User, Vulnerability, VulnerabilityEvent
+from app.models import (
+    Comment,
+    ScanRun,
+    Ticket,
+    TicketHistory,
+    TicketHost,
+    User,
+    Verification,
+    Vulnerability,
+    VulnerabilityEvent,
+)
 from app.rbac import Perm
+from app.services.verification import verification_out
 from app.services.workflow import CLOSED_STATUSES, SEVERITIES, STATUSES, Actor, allowed_targets, watchers
 
 router = APIRouter(tags=["tickets"])
@@ -216,6 +227,9 @@ def read_ticket(ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: 
     run_ids = {h.last_check_run_id for h in t.hosts if h.last_check_run_id}
     runs = {r.id: r for r in db.scalars(select(ScanRun).where(ScanRun.id.in_(run_ids)))} if run_ids else {}
     ws = watchers(db, t)
+    checks = list(
+        db.scalars(select(Verification).where(Verification.ticket_id == t.id).order_by(Verification.id.desc()).limit(5))
+    )
     return {
         **ticket_brief(t, counts),
         "fix_key": t.fix_key,
@@ -247,11 +261,12 @@ def read_ticket(ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: 
         "vulnerabilities": [vuln_out(v) for v in vulns],
         "watchers": [_user(u) for u in ws],
         "watching": any(u.id == p.user.id for u in ws),
-        "can": _can(t, p),
+        "verifications": [verification_out(v) for v in checks],
+        "can": _can(t, p, verifying=any(v.status in ("requested", "running") for v in checks)),
     }
 
 
-def _can(t: Ticket, p: Principal) -> dict:
+def _can(t: Ticket, p: Principal, verifying: bool = False) -> dict:
     """Что текущий пользователь может сделать с заявкой — для кнопок в карточке."""
     closed = t.status in CLOSED_STATUSES
     return {
@@ -260,6 +275,7 @@ def _can(t: Ticket, p: Principal) -> dict:
         "assign": p.can(Perm.TICKET_ASSIGN) and not closed,
         "override": p.can(Perm.TICKET_OVERRIDE),
         "comment": p.can(Perm.TICKET_WORK),
+        "verify": p.can(Perm.VERIFY) and not closed and not verifying,
     }
 
 

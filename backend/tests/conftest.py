@@ -15,6 +15,7 @@ os.environ["VM_ADMIN_PASSWORD"] = ""
 os.environ["VM_DEMO"] = "0"
 os.environ["VM_JOBS_INLINE"] = "1"
 os.environ["VM_POLL_ENABLED"] = "0"
+os.environ["VM_VERIFY_POLL_SECONDS"] = "0"
 os.environ["VM_ALLOW_MOCK_SOURCES"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402

@@ -100,8 +100,10 @@ def test_full_work_cycle(client, as_, project, users, db):
         ("fixed", "in_progress"),
     ]
     # Каждый переход — в журнале аудита и событием.
-    assert len(db.scalars(select(AuditLog).where(AuditLog.action == "ticket.status")).all()) == 5
-    assert len(db.scalars(select(Outbox).where(Outbox.type == "vm.ticket.status_changed")).all()) == 5
+    mine = select(AuditLog).where(AuditLog.action == "ticket.status", AuditLog.object_id == str(tid))
+    assert len(db.scalars(mine).all()) == 5
+    ours = select(Outbox).where(Outbox.type == "vm.ticket.status_changed", Outbox.subject == f"ticket/{tid}")
+    assert len(db.scalars(ours).all()) == 5
     last = db.scalars(select(AuditLog).where(AuditLog.action == "ticket.status").order_by(AuditLog.id.desc())).first()
     assert last.details["reason"] == "Не перезапустили службу"
 
@@ -243,7 +245,14 @@ def test_comments_and_watch(client, as_, project, users, db):
     assert client.post(f"/tickets/{tid}/watch", headers=as_("viewer")).json()["watching"] is True
     card = client.get(f"/tickets/{tid}", headers=as_("viewer")).json()
     assert {w["username"] for w in card["watchers"]} == {"engineer", "viewer"} and card["watching"]
-    assert card["can"] == {"statuses": [], "take": False, "assign": False, "override": False, "comment": False}
+    assert card["can"] == {
+        "statuses": [],
+        "take": False,
+        "assign": False,
+        "override": False,
+        "comment": False,
+        "verify": False,
+    }
     client.post(f"/tickets/{tid}/watch", headers=as_("viewer"), json={"watch": False})
     assert client.get(f"/tickets/{tid}", headers=as_("viewer")).json()["watching"] is False
 
