@@ -95,6 +95,26 @@ def ticket_meta(_: Principal = Depends(require(Perm.VIEW))) -> dict:
     }
 
 
+@router.get("/projects/{project_id}/ticket-facets")
+def ticket_facets(project_id: str, p: Principal = Depends(require(Perm.VIEW)), db: Session = Depends(get_db)) -> dict:
+    """Значения для фильтров «Заявок»: ОС и виды, которые есть в проекте, с числом открытых заявок."""
+    get_project(db, project_id, p)
+    is_open = func.sum(case((Ticket.status.in_(OPEN_STATUSES), 1), else_=0))
+    os_rows = db.execute(
+        select(Ticket.os, func.count(), is_open)
+        .where(Ticket.project_id == project_id, Ticket.os != "")
+        .group_by(Ticket.os)
+        .order_by(Ticket.os)
+    ).all()
+    kind_rows = db.execute(
+        select(Ticket.kind, func.count(), is_open).where(Ticket.project_id == project_id).group_by(Ticket.kind)
+    ).all()
+    return {
+        "os": [{"id": o, "total": n, "open": int(k or 0)} for o, n, k in os_rows],
+        "kinds": [{"id": o, "total": n, "open": int(k or 0)} for o, n, k in sorted(kind_rows)],
+    }
+
+
 @router.get("/projects/{project_id}/tickets")
 def list_tickets(
     project_id: str,
