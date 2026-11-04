@@ -2,15 +2,15 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import audit
 from app.api.common import not_found, paginate
 from app.db import get_db
-from app.deps import Principal, current_principal, require
-from app.models import User
-from app.rbac import EXTRA_PERMS, ROLES, Perm
+from app.deps import Principal, current_principal, get_project, require
+from app.models import Ticket, User
+from app.rbac import EXTRA_PERMS, ROLES, Perm, perms_for
 from app.security import hash_password
 
 router = APIRouter(tags=["users"])
@@ -90,14 +90,34 @@ def list_users(
 
 
 @router.get("/users/assignable")
-def assignable(p: Principal = Depends(require(Perm.VIEW)), db: Session = Depends(get_db)) -> list[dict]:
-    """Кому можно назначить заявку: исполнители и руководители."""
+def assignable(
+    project_id: str | None = None, p: Principal = Depends(require(Perm.VIEW)), db: Session = Depends(get_db)
+) -> list[dict]:
+    """Кому можно назначить заявку: исполнители и руководители. С `project_id` — ещё и загрузка:
+    сколько открытых заявок проекта уже на человеке."""
+    load: dict[int, int] = {}
+    if project_id:
+        from app.api.tickets import OPEN_STATUSES
+
+        get_project(db, project_id, p)
+        load = dict(
+            db.execute(
+                select(Ticket.assignee_id, func.count())
+                .where(
+                    Ticket.project_id == project_id,
+                    Ticket.assignee_id.is_not(None),
+                    Ticket.status.in_(OPEN_STATUSES),
+                )
+                .group_by(Ticket.assignee_id)
+            ).all()
+        )
     out = []
     for u in db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.display_name)):
-        if {"engineer", "manager"} & set(u.roles or []):
-            out.append(
-                {"id": u.id, "username": u.username, "display_name": u.display_name or u.username, "roles": u.roles}
-            )
+        if Perm.TICKET_WORK in perms_for(u.roles or [], u.extra_perms or []):
+            row = {"id": u.id, "username": u.username, "display_name": u.display_name or u.username, "roles": u.roles}
+            if project_id:
+                row["open_tickets"] = load.get(u.id, 0)
+            out.append(row)
     return out
 
 
