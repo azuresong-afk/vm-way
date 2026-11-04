@@ -23,7 +23,11 @@ class Settings(BaseSettings):
     # Демо-режим: проект, источник mock://demo и пользователи с паролем demo_password.
     demo: bool = False
     demo_password: str = ""
+    # Источники mock:// (встроенный мок «Сканера»): только для демо-стенда и тестов.
+    allow_mock_sources: bool = False
     jobs_workers: int = 4
+    # Задачи исполняются сразу в запросе (тесты).
+    jobs_inline: bool = False
     poll_enabled: bool = True
     verify_poll_seconds: float = 5.0
     verify_timeout_minutes: int = 240

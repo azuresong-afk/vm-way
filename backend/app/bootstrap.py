@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import audit
 from app.config import get_settings
-from app.models import Project, User
+from app.models import Project, ScannerSource, SourceLink, User
 from app.security import hash_password
 
 log = logging.getLogger("vm.bootstrap")
@@ -43,7 +43,8 @@ def ensure_admin(db: Session) -> None:
 
 
 def ensure_demo(db: Session) -> Project | None:
-    """Демо: проект и пользователи (пароль — VM_DEMO_PASSWORD). Источник mock://demo — задача 1.3."""
+    """Демо: проект, источник mock://demo с привязкой к проекту «Сканера» №7 и пользователи
+    (пароль — VM_DEMO_PASSWORD). Прогоны подтянет опрос источника."""
     s = get_settings()
     if not s.demo:
         return None
@@ -54,6 +55,24 @@ def ensure_demo(db: Session) -> Project | None:
         name="Демо: АО «Северный порт»", client="АО «Северный порт»", contract_ref="Договор № 14/26-ИБ от 12.08.2026"
     )
     db.add(pr)
+    db.flush()
+    src = ScannerSource(
+        name="Демо-«Сканер» (встроенный мок)",
+        base_url="mock://demo",
+        username="svc-vm",
+        auto_import=True,
+        poll_minutes=15,
+    )
+    db.add(src)
+    db.flush()
+    db.add(
+        SourceLink(
+            source_id=src.id,
+            project_id=pr.id,
+            engagement_id=7,
+            engagement_name="АО «Северный порт» — аудит защищённости 2026",
+        )
+    )
     if s.demo_password:
         for username, name, roles, extra in DEMO_USERS:
             if not db.scalar(select(User).where(User.username == username)):

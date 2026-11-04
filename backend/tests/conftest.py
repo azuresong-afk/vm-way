@@ -13,6 +13,9 @@ os.environ.setdefault("VM_ENCRYPTION_KEY", base64.b64encode(b"k" * 32).decode())
 os.environ.setdefault("VM_DATABASE_URL", "sqlite:///:memory:")
 os.environ["VM_ADMIN_PASSWORD"] = ""
 os.environ["VM_DEMO"] = "0"
+os.environ["VM_JOBS_INLINE"] = "1"
+os.environ["VM_POLL_ENABLED"] = "0"
+os.environ["VM_ALLOW_MOCK_SOURCES"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
