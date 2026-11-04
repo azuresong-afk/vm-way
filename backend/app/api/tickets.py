@@ -1,4 +1,4 @@
-"""Заявки и уязвимости: списки с фильтрами и карточки (чтение). Изменение заявок — задача 1.5."""
+"""Заявки и уязвимости: списки с фильтрами и карточки (чтение). Изменение заявок — app/api/ticket_work.py."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import case, func, or_, select
@@ -9,33 +9,12 @@ from app.db import get_db
 from app.deps import Principal, get_project, require
 from app.models import Comment, ScanRun, Ticket, TicketHistory, TicketHost, User, Vulnerability, VulnerabilityEvent
 from app.rbac import Perm
+from app.services.workflow import CLOSED_STATUSES, SEVERITIES, STATUSES, Actor, allowed_targets, watchers
 
 router = APIRouter(tags=["tickets"])
 
-STATUSES = {
-    "new": "Новая",
-    "assigned": "Назначена",
-    "in_progress": "В работе",
-    "waiting_window": "Ожидает окна",
-    "fixed": "Исправлено, ждёт проверки",
-    "verified": "Подтверждено",
-    "not_verified": "Не подтверждено",
-    "risk_accepted": "Принят риск",
-    "false_positive": "Ложное срабатывание",
-    "no_vendor_fix": "Нет исправления у производителя",
-    "regression": "Регрессия",
-}
-OPEN_STATUSES = [
-    "new",
-    "assigned",
-    "in_progress",
-    "waiting_window",
-    "fixed",
-    "not_verified",
-    "regression",
-    "no_vendor_fix",
-]
-SEVERITIES = ["critical", "high", "medium", "low", "info"]
+OPEN_STATUSES = [s for s in STATUSES if s not in CLOSED_STATUSES]
+
 _SEV_RANK = case(
     {s: i for i, s in enumerate(SEVERITIES)}, value=func.coalesce(Ticket.severity_override, Ticket.severity), else_=9
 )
@@ -236,6 +215,7 @@ def read_ticket(ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: 
         by_host.setdefault(v.host, []).append(v.id)
     run_ids = {h.last_check_run_id for h in t.hosts if h.last_check_run_id}
     runs = {r.id: r for r in db.scalars(select(ScanRun).where(ScanRun.id.in_(run_ids)))} if run_ids else {}
+    ws = watchers(db, t)
     return {
         **ticket_brief(t, counts),
         "fix_key": t.fix_key,
@@ -265,6 +245,21 @@ def read_ticket(ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: 
             for h in t.hosts
         ],
         "vulnerabilities": [vuln_out(v) for v in vulns],
+        "watchers": [_user(u) for u in ws],
+        "watching": any(u.id == p.user.id for u in ws),
+        "can": _can(t, p),
+    }
+
+
+def _can(t: Ticket, p: Principal) -> dict:
+    """Что текущий пользователь может сделать с заявкой — для кнопок в карточке."""
+    closed = t.status in CLOSED_STATUSES
+    return {
+        "statuses": allowed_targets(t, Actor(p.user, p.perms)),
+        "take": p.can(Perm.TICKET_WORK) and not closed and t.assignee_id is None,
+        "assign": p.can(Perm.TICKET_ASSIGN) and not closed,
+        "override": p.can(Perm.TICKET_OVERRIDE),
+        "comment": p.can(Perm.TICKET_WORK),
     }
 
 
