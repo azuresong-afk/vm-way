@@ -55,8 +55,10 @@ def fetch_results(client: ScannerClient, scanner_run_id: int) -> RunResults:
 
 
 def apply_results(db: Session, project: Project, run: ScanRun, results: RunResults) -> dict:
-    """Перенос результатов в «Устранение». Задача 1.4 добавит зеркало уязвимостей и заявки."""
-    return {}
+    """Перенос результатов в «Устранение»: зеркало уязвимостей и заявки (задача 1.4)."""
+    from app.services import mirror
+
+    return mirror.apply(db, project, run, results.findings, results.fixes)
 
 
 def import_run(
