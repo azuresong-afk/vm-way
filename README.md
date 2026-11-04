@@ -12,7 +12,10 @@
 - [x] 1.2 Адаптер «Сканера» (HTTP и мок API) и демо-фикстура: 3 ОС, 20 хостов, три плановых прогона; формы ответов сверены с кодом «Сканера» (`backend/tests/scanner_contract.py`)
 - [x] 1.3 Источники и привязки, фоновые задачи, импорт прогонов по кнопке и опросом без дублей
 - [x] 1.4 Зеркало уязвимостей по `dedup_key` и заявки из действий «Что исправить» с подзадачами по хостам
-- [ ] 1.5–1.8 — см. план
+- [x] 1.5 Назначение, статусы, комментарии, история, массовые действия
+- [x] 1.6 Повторная проверка прицельным прогоном и автозакрытие, регрессии
+- [x] 1.7 Интерфейс: Сводка, Заявки, Заявка, Мои задачи, Администрирование; светлая и тёмная тема, телефон
+- [ ] 1.8 Docker Compose, CI, документация
 
 ## Бэкенд: запуск тестов
 
@@ -42,4 +45,15 @@ alembic upgrade head && uvicorn app.main:app --reload
 python -m app.integrations.scanner.fixtures.generate > app/integrations/scanner/fixtures/demo.json
 ```
 
-Docker Compose, фронтенд и полная документация (`docs/INSTALL.md`, `docs/TESTING.md`) появятся в задачах 1.7–1.8.
+## Фронтенд
+
+```bash
+cd frontend
+npm ci
+npm run lint && npm run typecheck && npm test
+npm run dev   # http://localhost:5174, /api проксируется на API :8000 (VM_API_URL)
+```
+
+Демо-вход при `VM_DEMO=1`: `manager`, `engineer`, `engineer2`, `viewer` с паролем `VM_DEMO_PASSWORD`; администратор — `VM_ADMIN_USERNAME` / `VM_ADMIN_PASSWORD`.
+
+Docker Compose и полная документация (`docs/INSTALL.md`, `docs/TESTING.md`) появятся в задаче 1.8.
