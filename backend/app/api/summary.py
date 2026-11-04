@@ -10,12 +10,15 @@ from app.db import as_utc, get_db, utcnow
 from app.deps import Principal, get_project, require
 from app.models import Project, ScanRun, Ticket, TicketHost, Vulnerability
 from app.rbac import Perm
+from app.services import windows
 from app.services.workflow import CLOSED_STATUSES, SEVERITIES, STATUSES
 
 router = APIRouter(tags=["summary"])
 
 OPEN_STATUSES = [s for s in STATUSES if s not in CLOSED_STATUSES]
 PERIOD_WEEKS = {"3m": 13, "1y": 52}
+UPCOMING_DAYS = 14
+UPCOMING_LIMIT = 5
 
 
 def _week_start(d: datetime) -> datetime:
@@ -35,7 +38,7 @@ def summary(
     db: Session = Depends(get_db),
 ) -> dict:
     """Сводка: открытые заявки и уязвимости, изменение за период, недели «появилось / закрыто»
-    по уровням, среднее время устранения, топ хостов и последние подтверждения.
+    по уровням, среднее время устранения, топ хостов, ближайшие окна (2 недели) и последние подтверждения.
 
     Выбор: недели и время устранения считаются по уязвимостям (`first_seen_at` — дата прогона,
     который её нашёл; `fixed_at` — дата прогона, который подтвердил исправление), а не по заявкам:
@@ -130,6 +133,12 @@ def summary(
         .limit(1)
     ).first()
     open_now = sum(open_by_sev.values())
+    upcoming = []
+    for o in windows.occurrences(windows.project_windows(db, project_id), now, now + timedelta(days=UPCOMING_DAYS)):
+        pl = windows.plan(db, o)
+        upcoming.append({**o.out(), "tickets": len(pl["items"]), "will_close": 0 if o.cancelled else pl["will_close"]})
+        if len(upcoming) == UPCOMING_LIMIT:
+            break
     return {
         "period": period,
         "period_start": first_week.date().isoformat(),
@@ -153,6 +162,7 @@ def summary(
             for s, v in sorted(mttr.items(), key=lambda kv: rank[kv[0]])
         ],
         "top_hosts": top,
+        "upcoming_windows": upcoming,
         "recent_verified": [
             {
                 "id": t.id,

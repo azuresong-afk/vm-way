@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
+  CalendarClock,
   ClipboardList,
   FolderKanban,
   LayoutDashboard,
@@ -35,6 +36,7 @@ const NAV: NavItem[] = [
   { to: "/", label: "Сводка", icon: <LayoutDashboard size={18} />, perm: "view" },
   { to: "/tickets", label: "Заявки", icon: <ClipboardList size={18} />, perm: "view" },
   { to: "/my", label: "Мои задачи", icon: <UserCheck size={18} />, perm: "ticket_work" },
+  { to: "/windows", label: "Окна и план", icon: <CalendarClock size={18} />, perm: "view" },
   { to: "/admin/users", label: "Пользователи и роли", icon: <Users size={18} />, perm: "users_manage", admin: true },
   { to: "/admin/projects", label: "Проекты", icon: <FolderKanban size={18} />, perm: "projects_manage", admin: true },
   { to: "/admin/sources", label: "Источники", icon: <PlugZap size={18} />, perm: "sources_manage", admin: true },

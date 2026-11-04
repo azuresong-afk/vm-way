@@ -22,6 +22,7 @@ export type Perm =
   | "ticket_assign"
   | "ticket_override"
   | "verify"
+  | "windows_manage"
   | "projects_manage"
   | "sources_manage"
   | "users_manage"
@@ -93,6 +94,7 @@ export interface TicketBrief {
   status_label: string;
   is_regression: boolean;
   assignee: UserRef | null;
+  window: { id: number; name: string } | null;
   reboot: boolean;
   hosts_total: number;
   hosts_confirmed: number;
@@ -209,6 +211,7 @@ export interface TicketCan {
   override: boolean;
   comment: boolean;
   verify: boolean;
+  window: boolean;
 }
 
 export interface TicketDetail extends TicketBrief {
@@ -261,6 +264,7 @@ export interface TicketQuery {
   kind?: string[];
   os?: string[];
   assignee?: string;
+  window?: string;
   host?: string;
   q?: string;
   sort?: "priority" | "severity" | "created" | "updated" | "title" | "hosts";
@@ -306,6 +310,7 @@ export interface SummaryOut {
   awaiting_check: number;
   weeks: { start: string; opened: SevCounts; closed: SevCounts }[];
   mttr: { severity: Severity; days: number | null; count: number }[];
+  upcoming_windows: CalendarItem[];
   top_hosts: { host: string; open: number; by_severity: SevCounts; tickets: number }[];
   recent_verified: {
     id: number;
@@ -487,4 +492,90 @@ export interface AuditFilters {
   q?: string;
   limit?: number;
   offset?: number;
+}
+
+// --- Окна обслуживания (задача 2.1) ---
+
+export type WindowKind = "once" | "recurring" | "blackout";
+
+export interface Occurrence {
+  window_id: number;
+  window_name: string;
+  kind: WindowKind;
+  start: string;
+  end: string;
+  cancelled: boolean;
+  blackouts: { id: number; name: string }[];
+  /** Хосты, закрытые блэкаутом; null — закрыт весь проект. */
+  blocked_hosts: string[] | null;
+}
+
+export interface CalendarItem extends Occurrence {
+  tickets?: number;
+  will_close?: number;
+}
+
+export interface WindowIn {
+  name: string;
+  kind: WindowKind;
+  timezone: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  weekdays: number[];
+  start_time: string;
+  duration_minutes: number;
+  valid_from: string | null;
+  valid_until: string | null;
+  hosts: string[];
+  note: string;
+  is_active: boolean;
+}
+
+export interface WindowOut extends WindowIn {
+  id: number;
+  project_id: string;
+  kind_label: string;
+  schedule: string;
+  next: Occurrence | null;
+  past: boolean;
+  tickets: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanItem {
+  ticket_id: number;
+  title: string;
+  kind: string;
+  severity: Severity;
+  status: TicketStatus;
+  assignee: string | null;
+  reboot: boolean;
+  hosts: string[];
+  skipped_hosts: { host: string; reason: string }[];
+  vulns: number;
+  estimate_minutes: number;
+  start: string | null;
+  end: string | null;
+  fits: boolean;
+}
+
+export interface WindowPlan {
+  occurrence: Occurrence;
+  items: PlanItem[];
+  will_close: number;
+  will_close_by_severity: SevCounts;
+  hosts: number;
+  reboots: number;
+  overflow_vulns: number;
+  overflow_tickets: number;
+  planned_minutes: number;
+  window_minutes: number;
+}
+
+export interface WindowPlanOut {
+  window: WindowOut;
+  plan: WindowPlan | null;
+  prev: string | null;
+  next: string | null;
 }

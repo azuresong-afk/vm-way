@@ -13,9 +13,9 @@ from app.api.common import not_found
 from app.api.tickets import _counts, ticket_brief
 from app.db import get_db
 from app.deps import Principal, get_project, require
-from app.models import Ticket, Verification
+from app.models import MaintenanceWindow, Ticket, Verification
 from app.rbac import Perm
-from app.services import verification, workflow
+from app.services import verification, windows, workflow
 from app.services.workflow import Actor, WorkflowError
 
 router = APIRouter(tags=["tickets"])
@@ -220,8 +220,9 @@ def read_verification(
 
 class BulkIn(BaseModel):
     ticket_ids: list[int] = Field(min_length=1, max_length=500)
-    action: Literal["assign", "status"]
+    action: Literal["assign", "status", "window"]
     assignee_id: int | None = None
+    window_id: int | None = None
     status: str | None = Field(default=None, max_length=32)
     reason: str | None = Field(default=None, max_length=2000)
 
@@ -233,13 +234,18 @@ def bulk(
     p: Principal = Depends(require(Perm.TICKET_ASSIGN)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Массовые действия: назначить (или снять) исполнителя, перевести в статус.
+    """Массовые действия: назначить (или снять) исполнителя, перевести в статус, поставить в окно.
 
     Каждая заявка проверяется отдельно: подходящие меняются, по остальным — причина отказа.
     Всё — одной транзакцией, каждая изменённая заявка — своей записью в журнале."""
     get_project(db, project_id, p)
     if body.action == "status" and not body.status:
         raise HTTPException(422, "Укажите статус")
+    win = None
+    if body.action == "window" and body.window_id is not None:
+        win = db.get(MaintenanceWindow, body.window_id)
+        if win is None or win.project_id != project_id:
+            raise not_found("Окно")
     ids = list(dict.fromkeys(body.ticket_ids))
     found = {
         t.id: t
@@ -258,6 +264,8 @@ def bulk(
         try:
             if body.action == "assign":
                 changed = workflow.assign(db, t, actor, body.assignee_id, via="bulk")
+            elif body.action == "window":
+                changed = windows.place(db, t, actor, win, via="bulk")
             else:
                 workflow.change_status(db, t, actor, body.status or "", body.reason)
                 changed = True
@@ -278,6 +286,7 @@ def bulk(
             "action": body.action,
             "assignee_id": body.assignee_id,
             "status": body.status,
+            "window_id": body.window_id,
             "requested": len(ids),
             "changed": done,
             "failed": [f["id"] for f in failed],

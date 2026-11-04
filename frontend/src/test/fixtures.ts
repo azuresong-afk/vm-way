@@ -1,4 +1,4 @@
-import type { MeOut, ProjectOut, TicketBrief, TicketDetail } from "../api/types";
+import type { MeOut, ProjectOut, TicketBrief, TicketDetail, WindowOut, WindowPlanOut } from "../api/types";
 
 export const project: ProjectOut = {
   id: "p1",
@@ -17,7 +17,7 @@ export function me(roles: string[], permissions: MeOut["permissions"]): MeOut {
 }
 
 export const engineer = me(["engineer"], ["view", "import", "ticket_work", "verify"]);
-export const manager = me(["manager"], ["view", "import", "ticket_work", "ticket_assign", "ticket_override", "verify", "audit_view"]);
+export const manager = me(["manager"], ["view", "import", "ticket_work", "ticket_assign", "ticket_override", "verify", "windows_manage", "audit_view"]);
 
 export const brief: TicketBrief = {
   id: 5,
@@ -35,6 +35,7 @@ export const brief: TicketBrief = {
   status_label: "Новая",
   is_regression: false,
   assignee: null,
+  window: null,
   reboot: false,
   hosts_total: 4,
   hosts_confirmed: 1,
@@ -77,5 +78,90 @@ export const detail: TicketDetail = {
   watchers: [],
   watching: false,
   verifications: [],
-  can: { statuses: [], take: true, assign: false, override: false, comment: true, verify: true },
+  can: { statuses: [], take: true, assign: false, override: false, comment: true, verify: true, window: false },
+};
+
+export const windowOut: WindowOut = {
+  id: 3,
+  project_id: "p1",
+  name: "Ночное окно",
+  kind: "recurring",
+  kind_label: "Повторяющееся",
+  timezone: "Europe/Moscow",
+  starts_at: null,
+  ends_at: null,
+  weekdays: [1],
+  start_time: "22:00",
+  duration_minutes: 240,
+  valid_from: null,
+  valid_until: null,
+  hosts: [],
+  note: "",
+  is_active: true,
+  schedule: "вт 22:00–02:00 (Europe/Moscow)",
+  next: {
+    window_id: 3,
+    window_name: "Ночное окно",
+    kind: "recurring",
+    start: "2026-11-10T19:00:00Z",
+    end: "2026-11-10T23:00:00Z",
+    cancelled: false,
+    blackouts: [],
+    blocked_hosts: [],
+  },
+  past: false,
+  tickets: 2,
+  created_at: "2026-11-04T10:00:00Z",
+  updated_at: "2026-11-04T10:00:00Z",
+};
+
+export const windowPlan: WindowPlanOut = {
+  window: windowOut,
+  prev: null,
+  next: "2026-11-17T19:00:00Z",
+  plan: {
+    occurrence: windowOut.next!,
+    items: [
+      {
+        ticket_id: 5,
+        title: "Обновить glibc на РЕД ОС 7.3",
+        kind: "package",
+        severity: "high",
+        status: "waiting_window",
+        assignee: "Смирнов Д. В.",
+        reboot: false,
+        hosts: ["10.20.3.31", "10.20.3.32"],
+        skipped_hosts: [],
+        vulns: 4,
+        estimate_minutes: 20,
+        start: "2026-11-10T19:00:00Z",
+        end: "2026-11-10T19:20:00Z",
+        fits: true,
+      },
+      {
+        ticket_id: 6,
+        title: "Обновить ядро Linux и перезагрузить (Debian 12)",
+        kind: "kernel",
+        severity: "critical",
+        status: "waiting_window",
+        assignee: null,
+        reboot: true,
+        hosts: ["10.20.1.11"],
+        skipped_hosts: [{ host: "10.20.1.12", reason: "не входит в окно" }],
+        vulns: 3,
+        estimate_minutes: 250,
+        start: "2026-11-10T19:20:00Z",
+        end: "2026-11-10T23:30:00Z",
+        fits: false,
+      },
+    ],
+    will_close: 4,
+    will_close_by_severity: { critical: 0, high: 4, medium: 0, low: 0, info: 0 },
+    hosts: 2,
+    reboots: 0,
+    overflow_vulns: 3,
+    overflow_tickets: 1,
+    planned_minutes: 270,
+    window_minutes: 240,
+  },
 };

@@ -1,13 +1,14 @@
 """Начальная настройка: первый администратор и демо-данные."""
 
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import audit
 from app.config import get_settings
-from app.models import Project, ScannerSource, SourceLink, User
+from app.models import MaintenanceWindow, Project, ScannerSource, SourceLink, User
 from app.security import hash_password
 
 log = logging.getLogger("vm.bootstrap")
@@ -85,6 +86,28 @@ def ensure_demo(db: Session) -> Project | None:
                         password_hash=hash_password(s.demo_password),
                     )
                 )
+    # Окна обслуживания (задача 2.1): ночное окно по вторникам и четвергам и новогодний блэкаут.
+    db.add(
+        MaintenanceWindow(
+            project_id=pr.id,
+            name="Ночное окно",
+            kind="recurring",
+            weekdays=[1, 3],
+            start_time="22:00",
+            duration_minutes=240,
+            note="Согласовано с заказчиком письмом от 20.10.2026",
+        )
+    )
+    db.add(
+        MaintenanceWindow(
+            project_id=pr.id,
+            name="Новогодняя заморозка",
+            kind="blackout",
+            starts_at=datetime(2026, 12, 29, 21, tzinfo=UTC),
+            ends_at=datetime(2027, 1, 11, 6, tzinfo=UTC),
+            note="Изменения в инфраструктуре заказчика запрещены",
+        )
+    )
     db.flush()
     audit.record(db, None, "demo.seed", object_type="project", object_id=pr.id, project_id=pr.id)
     db.commit()

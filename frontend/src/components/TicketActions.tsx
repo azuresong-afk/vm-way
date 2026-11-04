@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, BellOff, CheckCheck, Hand, ShieldOff, SlidersHorizontal, UserPlus, ArrowRightLeft } from "lucide-react";
+import { Bell, BellOff, CalendarClock, CheckCheck, Hand, ShieldOff, SlidersHorizontal, UserPlus, ArrowRightLeft } from "lucide-react";
 import { api } from "../api/client";
 import type { AssignableUser, Severity, TicketDetail, TicketStatus } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -8,8 +8,9 @@ import { plural } from "../lib/format";
 import { EXCEPTION_STATUSES, SEVERITIES, SEVERITY_LABEL, STATUS_LABEL, reasonRequired } from "../lib/labels";
 import { notifyJobs } from "../lib/jobs";
 import { ErrorAlert, HostStatusPill, Modal } from "./ui";
+import { fmtRange, usableWindows } from "../lib/zoned";
 
-type Dialog = "assign" | "status" | "risk" | "override" | "verify" | null;
+type Dialog = "assign" | "status" | "risk" | "override" | "verify" | "window" | null;
 
 /** Выбор исполнителя с загрузкой: сколько открытых заявок проекта уже на человеке. */
 export function AssigneeSelect({
@@ -71,6 +72,67 @@ function Footer({ onClose, busy, label, danger, disabled, onSubmit }: { onClose:
         {busy ? "Сохранение…" : label}
       </button>
     </>
+  );
+}
+
+/** Выбор окна обслуживания: включённые рабочие окна с ближайшей датой. */
+export function WindowSelect({
+  projectId,
+  value,
+  onChange,
+  id,
+}: {
+  projectId: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  id?: string;
+}) {
+  const list = useAsync(() => api.windows(projectId), [projectId]);
+  const options = usableWindows(list.data);
+  return (
+    <select
+      id={id}
+      className="select"
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      disabled={list.loading}
+    >
+      <option value="">— без окна —</option>
+      {options.map((w) => (
+        <option key={w.id} value={w.id}>
+          {w.name} · ближайшее {fmtRange(w.next!.start, w.next!.end, w.timezone)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function WindowModal({ t, onClose, onDone }: { t: TicketDetail; onClose: () => void; onDone: () => void }) {
+  const [win, setWin] = useState<number | null>(t.window?.id ?? null);
+  const s = useSubmit(onDone);
+  return (
+    <Modal
+      title={`Окно для заявки №${t.id}`}
+      onClose={onClose}
+      footer={
+        <Footer
+          onClose={onClose}
+          busy={s.busy}
+          label={win === null ? "Снять с окна" : "Поставить"}
+          disabled={win === (t.window?.id ?? null)}
+          onSubmit={() => void s.run(() => api.placeInWindow(t.id, win))}
+        />
+      }
+    >
+      <label className="field">
+        <span>Окно обслуживания</span>
+        <WindowSelect projectId={t.project_id} value={win} onChange={setWin} />
+        <small>
+          Назначенная заявка перейдёт в «Ожидает окна»; снятие с окна вернёт её в «В работе». В окно попадут только хосты из его охвата.
+        </small>
+      </label>
+      {s.error && <ErrorAlert error={s.error} />}
+    </Modal>
   );
 }
 
@@ -328,6 +390,11 @@ export function TicketActions({ t, onChanged, compact }: { t: TicketDetail; onCh
             <UserPlus size={15} aria-hidden="true" /> Назначить
           </button>
         )}
+        {t.can.window && (
+          <button type="button" className={`btn${sm}`} onClick={() => setDialog("window")}>
+            <CalendarClock size={15} aria-hidden="true" /> {t.window ? "Окно" : "В окно"}
+          </button>
+        )}
         {work.length > 0 && (
           <button type="button" className={`btn${sm}`} onClick={() => setDialog("status")}>
             <ArrowRightLeft size={15} aria-hidden="true" /> Перевести
@@ -362,6 +429,7 @@ export function TicketActions({ t, onChanged, compact }: { t: TicketDetail; onCh
       {dialog === "risk" && <RiskModal t={t} onClose={close} onDone={done} />}
       {dialog === "override" && <OverrideModal t={t} onClose={close} onDone={done} />}
       {dialog === "verify" && <VerifyModal t={t} onClose={close} onDone={done} />}
+      {dialog === "window" && <WindowModal t={t} onClose={close} onDone={done} />}
     </>
   );
 }
