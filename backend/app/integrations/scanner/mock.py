@@ -93,6 +93,8 @@ class MockScanner:
             ("GET", r"/engagements", lambda: self.data["engagements"]),
             ("GET", r"/engagements/(\d+)", lambda e: self._engagement(int(e))),
             ("GET", r"/engagements/(\d+)/allowlist", lambda e: self._allowlist(int(e))),
+            ("GET", r"/engagements/(\d+)/assets", lambda e: self._assets(int(e))),
+            ("GET", r"/engagements/(\d+)/asset-groups", lambda e: self._asset_groups(int(e))),
             ("GET", r"/engagements/(\d+)/runs", lambda e: self._run_list(int(e), params)),
             ("POST", r"/engagements/(\d+)/runs", lambda e: self._start_run(int(e), body or {})),
             ("GET", r"/runs/(\d+)", lambda r: self._run_meta(int(r))),
@@ -121,6 +123,14 @@ class MockScanner:
     def _allowlist(self, eid: int) -> list[dict]:
         self._engagement(eid)
         return self.data["allowlist"].get(str(eid), [])
+
+    def _assets(self, eid: int) -> list[dict]:
+        self._engagement(eid)
+        return self.data.get("assets", {}).get(str(eid), [])
+
+    def _asset_groups(self, eid: int) -> list[dict]:
+        self._engagement(eid)
+        return self.data.get("asset_groups", {}).get(str(eid), [])
 
     def _get(self, run_id: int) -> dict:
         if run_id not in self._runs:

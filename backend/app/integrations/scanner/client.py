@@ -5,6 +5,9 @@
 - GET /runs/{id}/fixes — FixPlanOut {total, items, …}, limit ≤ 500;
 - GET /runs/{id}/coverage — CoverageOut {entries: [{host, module, status, label, reason}], hosts, …};
 - GET /engagements/{id}/allowlist — список AllowlistOut {id, cidr, …};
+- GET /engagements/{id}/assets — список AssetOut {id, address, hostname, owner, criticality, tags[],
+  groups[{id, name}], …} без пагинации;
+- GET /engagements/{id}/asset-groups — список AssetGroupOut {id, name, asset_count, …};
 - POST /engagements/{id}/runs — RunCreated (RunOut + accepted_targets: int, denied_targets: [{target, reason, count}]),
   ни одной разрешённой цели — 422.
 """
@@ -35,6 +38,8 @@ class ScannerClient(Protocol):
     def engagements(self) -> list[dict]: ...
     def engagement(self, engagement_id: int) -> dict: ...
     def allowlist(self, engagement_id: int) -> list[str]: ...
+    def assets(self, engagement_id: int) -> list[dict]: ...
+    def asset_groups(self, engagement_id: int) -> list[dict]: ...
     def runs(self, engagement_id: int, status: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]: ...
     def run(self, run_id: int) -> dict: ...
     def findings(self, run_id: int) -> list[dict]: ...
@@ -117,6 +122,12 @@ class HttpScannerClient:
 
     def allowlist(self, engagement_id: int) -> list[str]:
         return [row["cidr"] for row in self._get(f"/engagements/{engagement_id}/allowlist")]
+
+    def assets(self, engagement_id: int) -> list[dict]:
+        return self._get(f"/engagements/{engagement_id}/assets")
+
+    def asset_groups(self, engagement_id: int) -> list[dict]:
+        return self._get(f"/engagements/{engagement_id}/asset-groups")
 
     def runs(self, engagement_id: int, status: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
         return self._get(f"/engagements/{engagement_id}/runs", status=status, limit=limit, offset=offset)

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import audit
 from app.config import get_settings
-from app.models import MaintenanceWindow, Project, ScannerSource, SourceLink, User
+from app.models import AssignmentRule, MaintenanceWindow, Project, ScannerSource, SourceLink, Team, User
 from app.security import hash_password
 
 log = logging.getLogger("vm.bootstrap")
@@ -109,6 +109,34 @@ def ensure_demo(db: Session) -> Project | None:
         )
     )
     db.flush()
+    # Правила назначения (задача 2.2): DMZ и серверы приложений — команде по загрузке, РЕД ОС — исполнителю.
+    staff = {u.username: u for u in db.scalars(select(User).where(User.username.in_(["engineer", "engineer2"])))}
+    if len(staff) == 2:
+        team = db.scalar(select(Team).where(Team.name == "Веб-сервисы"))
+        if team is None:
+            team = Team(name="Веб-сервисы", members=[staff["engineer"], staff["engineer2"]])
+            db.add(team)
+            db.flush()
+        db.add(
+            AssignmentRule(
+                project_id=pr.id,
+                position=1,
+                name="DMZ и приложения — команде веб-сервисов",
+                groups=["DMZ", "Серверы приложений"],
+                team_id=team.id,
+            )
+        )
+        db.add(
+            AssignmentRule(
+                project_id=pr.id,
+                position=2,
+                name="Ядро РЕД ОС — Ковалёву",
+                os=["РЕД ОС 7.3"],
+                kinds=["kernel"],
+                assignee_id=staff["engineer2"].id,
+            )
+        )
+        db.flush()
     audit.record(db, None, "demo.seed", object_type="project", object_id=pr.id, project_id=pr.id)
     db.commit()
     return pr

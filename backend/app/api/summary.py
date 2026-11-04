@@ -134,7 +134,8 @@ def summary(
     ).first()
     open_now = sum(open_by_sev.values())
     upcoming = []
-    for o in windows.occurrences(windows.project_windows(db, project_id), now, now + timedelta(days=UPCOMING_DAYS)):
+    ws = windows.project_windows(db, project_id)
+    for o in windows.occurrences(ws, now, now + timedelta(days=UPCOMING_DAYS), scopes=windows.scopes_for(db, ws)):
         pl = windows.plan(db, o)
         upcoming.append({**o.out(), "tickets": len(pl["items"]), "will_close": 0 if o.cancelled else pl["will_close"]})
         if len(upcoming) == UPCOMING_LIMIT:

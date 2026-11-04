@@ -174,6 +174,637 @@
    "os_family": "redos"
   }
  ],
+ "assets": {
+  "7": [
+   {
+    "id": 501,
+    "engagement_id": 7,
+    "address": "10.20.1.11",
+    "hostname": "web-01",
+    "owner": "Отдел веб-сервисов",
+    "criticality": "high",
+    "notes": null,
+    "tags": [
+     "internet",
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 1,
+      "name": "DMZ"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Debian GNU/Linux 12 (bookworm)",
+    "os_family": "debian",
+    "os_family_label": "Debian",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 502,
+    "engagement_id": 7,
+    "address": "10.20.1.12",
+    "hostname": "web-02",
+    "owner": "Отдел веб-сервисов",
+    "criticality": "high",
+    "notes": null,
+    "tags": [
+     "internet",
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 1,
+      "name": "DMZ"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Debian GNU/Linux 12 (bookworm)",
+    "os_family": "debian",
+    "os_family_label": "Debian",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 503,
+    "engagement_id": 7,
+    "address": "10.20.1.13",
+    "hostname": "web-03",
+    "owner": "Отдел веб-сервисов",
+    "criticality": "high",
+    "notes": null,
+    "tags": [
+     "internet",
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 1,
+      "name": "DMZ"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Debian GNU/Linux 12 (bookworm)",
+    "os_family": "debian",
+    "os_family_label": "Debian",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 504,
+    "engagement_id": 7,
+    "address": "10.20.1.14",
+    "hostname": "web-04",
+    "owner": "Отдел веб-сервисов",
+    "criticality": "high",
+    "notes": null,
+    "tags": [
+     "internet",
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 1,
+      "name": "DMZ"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Debian GNU/Linux 12 (bookworm)",
+    "os_family": "debian",
+    "os_family_label": "Debian",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 505,
+    "engagement_id": 7,
+    "address": "10.20.1.15",
+    "hostname": "app-01",
+    "owner": "Отдел веб-сервисов",
+    "criticality": "high",
+    "notes": null,
+    "tags": [
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 2,
+      "name": "Серверы приложений"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Debian GNU/Linux 12 (bookworm)",
+    "os_family": "debian",
+    "os_family_label": "Debian",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 506,
+    "engagement_id": 7,
+    "address": "10.20.1.16",
+    "hostname": "app-02",
+    "owner": "Отдел веб-сервисов",
+    "criticality": "high",
+    "notes": null,
+    "tags": [
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 2,
+      "name": "Серверы приложений"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Debian GNU/Linux 12 (bookworm)",
+    "os_family": "debian",
+    "os_family_label": "Debian",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 507,
+    "engagement_id": 7,
+    "address": "10.20.1.17",
+    "hostname": "db-01",
+    "owner": "Группа СУБД",
+    "criticality": "critical",
+    "notes": null,
+    "tags": [
+     "pdn",
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 3,
+      "name": "Базы данных"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Debian GNU/Linux 12 (bookworm)",
+    "os_family": "debian",
+    "os_family_label": "Debian",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 508,
+    "engagement_id": 7,
+    "address": "10.20.1.18",
+    "hostname": "mon-01",
+    "owner": "Отдел эксплуатации",
+    "criticality": "medium",
+    "notes": null,
+    "tags": [],
+    "groups": [
+     {
+      "id": 5,
+      "name": "Инфраструктура"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Debian GNU/Linux 12 (bookworm)",
+    "os_family": "debian",
+    "os_family_label": "Debian",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 509,
+    "engagement_id": 7,
+    "address": "10.20.2.21",
+    "hostname": "arm-01",
+    "owner": "Служба поддержки",
+    "criticality": "low",
+    "notes": null,
+    "tags": [
+     "arm"
+    ],
+    "groups": [
+     {
+      "id": 4,
+      "name": "АРМ сотрудников"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Astra Linux SE 1.7",
+    "os_family": "astra",
+    "os_family_label": "Astra Linux",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 510,
+    "engagement_id": 7,
+    "address": "10.20.2.22",
+    "hostname": "arm-02",
+    "owner": "Служба поддержки",
+    "criticality": "low",
+    "notes": null,
+    "tags": [
+     "arm"
+    ],
+    "groups": [
+     {
+      "id": 4,
+      "name": "АРМ сотрудников"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Astra Linux SE 1.7",
+    "os_family": "astra",
+    "os_family_label": "Astra Linux",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 511,
+    "engagement_id": 7,
+    "address": "10.20.2.23",
+    "hostname": "arm-03",
+    "owner": "Служба поддержки",
+    "criticality": "low",
+    "notes": null,
+    "tags": [
+     "arm"
+    ],
+    "groups": [
+     {
+      "id": 4,
+      "name": "АРМ сотрудников"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Astra Linux SE 1.7",
+    "os_family": "astra",
+    "os_family_label": "Astra Linux",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 512,
+    "engagement_id": 7,
+    "address": "10.20.2.24",
+    "hostname": "arm-04",
+    "owner": "Служба поддержки",
+    "criticality": "low",
+    "notes": null,
+    "tags": [
+     "arm"
+    ],
+    "groups": [
+     {
+      "id": 4,
+      "name": "АРМ сотрудников"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Astra Linux SE 1.7",
+    "os_family": "astra",
+    "os_family_label": "Astra Linux",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 513,
+    "engagement_id": 7,
+    "address": "10.20.2.25",
+    "hostname": "fs-01",
+    "owner": "Отдел эксплуатации",
+    "criticality": "critical",
+    "notes": null,
+    "tags": [
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 5,
+      "name": "Инфраструктура"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Astra Linux SE 1.7",
+    "os_family": "astra",
+    "os_family_label": "Astra Linux",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 514,
+    "engagement_id": 7,
+    "address": "10.20.2.26",
+    "hostname": "dc-01",
+    "owner": "Отдел эксплуатации",
+    "criticality": "critical",
+    "notes": null,
+    "tags": [
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 5,
+      "name": "Инфраструктура"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "Astra Linux SE 1.7",
+    "os_family": "astra",
+    "os_family_label": "Astra Linux",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 515,
+    "engagement_id": 7,
+    "address": "10.20.3.31",
+    "hostname": "srv-01",
+    "owner": "Группа СУБД",
+    "criticality": "high",
+    "notes": null,
+    "tags": [
+     "pdn",
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 3,
+      "name": "Базы данных"
+     },
+     {
+      "id": 2,
+      "name": "Серверы приложений"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "РЕД ОС 7.3",
+    "os_family": "redos",
+    "os_family_label": "РЕД ОС",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 516,
+    "engagement_id": 7,
+    "address": "10.20.3.32",
+    "hostname": "srv-02",
+    "owner": "Отдел эксплуатации",
+    "criticality": "medium",
+    "notes": null,
+    "tags": [
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 2,
+      "name": "Серверы приложений"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "РЕД ОС 7.3",
+    "os_family": "redos",
+    "os_family_label": "РЕД ОС",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 517,
+    "engagement_id": 7,
+    "address": "10.20.3.33",
+    "hostname": "srv-03",
+    "owner": "Отдел эксплуатации",
+    "criticality": "medium",
+    "notes": null,
+    "tags": [
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 2,
+      "name": "Серверы приложений"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "РЕД ОС 7.3",
+    "os_family": "redos",
+    "os_family_label": "РЕД ОС",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 518,
+    "engagement_id": 7,
+    "address": "10.20.3.34",
+    "hostname": "srv-04",
+    "owner": "Отдел эксплуатации",
+    "criticality": "medium",
+    "notes": null,
+    "tags": [
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 2,
+      "name": "Серверы приложений"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "РЕД ОС 7.3",
+    "os_family": "redos",
+    "os_family_label": "РЕД ОС",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 519,
+    "engagement_id": 7,
+    "address": "10.20.3.35",
+    "hostname": "srv-05",
+    "owner": "Отдел эксплуатации",
+    "criticality": "medium",
+    "notes": null,
+    "tags": [
+     "prod"
+    ],
+    "groups": [
+     {
+      "id": 2,
+      "name": "Серверы приложений"
+     }
+    ],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "РЕД ОС 7.3",
+    "os_family": "redos",
+    "os_family_label": "РЕД ОС",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   },
+   {
+    "id": 520,
+    "engagement_id": 7,
+    "address": "10.20.3.36",
+    "hostname": "srv-06",
+    "owner": null,
+    "criticality": "low",
+    "notes": null,
+    "tags": [],
+    "groups": [],
+    "created_at": "2026-08-20T09:10:00Z",
+    "os_guess": "РЕД ОС 7.3",
+    "os_family": "redos",
+    "os_family_label": "РЕД ОС",
+    "last_run_id": 102,
+    "finding_counts": {},
+    "findings_total": 0,
+    "checked_run_id": 102,
+    "source": "discovered",
+    "first_seen_at": "2026-09-08T19:00:00Z",
+    "last_seen_at": "2026-11-02T19:00:00Z"
+   }
+  ]
+ },
+ "asset_groups": {
+  "7": [
+   {
+    "id": 1,
+    "engagement_id": 7,
+    "name": "DMZ",
+    "asset_count": 4,
+    "created_at": "2026-08-20T09:10:00Z"
+   },
+   {
+    "id": 4,
+    "engagement_id": 7,
+    "name": "АРМ сотрудников",
+    "asset_count": 4,
+    "created_at": "2026-08-20T09:10:00Z"
+   },
+   {
+    "id": 3,
+    "engagement_id": 7,
+    "name": "Базы данных",
+    "asset_count": 2,
+    "created_at": "2026-08-20T09:10:00Z"
+   },
+   {
+    "id": 5,
+    "engagement_id": 7,
+    "name": "Инфраструктура",
+    "asset_count": 3,
+    "created_at": "2026-08-20T09:10:00Z"
+   },
+   {
+    "id": 6,
+    "engagement_id": 7,
+    "name": "Резерв",
+    "asset_count": 0,
+    "created_at": "2026-08-20T09:10:00Z"
+   },
+   {
+    "id": 2,
+    "engagement_id": 7,
+    "name": "Серверы приложений",
+    "asset_count": 7,
+    "created_at": "2026-08-20T09:10:00Z"
+   }
+  ]
+ },
  "runs": [
   {
    "run": {

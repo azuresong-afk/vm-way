@@ -94,6 +94,8 @@ def apply(db: Session, project: Project, run: ScanRun, findings: list[dict], fix
         "tickets_created": 0,
         "tickets_updated": 0,
         "ticket_hosts_added": 0,
+        # Номера созданных заявок — для правил назначения (задача 2.2); в статистику прогона не идут.
+        "created_ids": [],
     }
     now = utcnow()
 
@@ -179,6 +181,7 @@ def apply(db: Session, project: Project, run: ScanRun, findings: list[dict], fix
             db.flush()
             tickets[fix["key"]] = t
             stats["tickets_created"] += 1
+            stats["created_ids"].append(t.id)
             _history(
                 db, t, "created", to_value=t.status, details={"run_id": run.id, "scanner_run_id": run.scanner_run_id}
             )

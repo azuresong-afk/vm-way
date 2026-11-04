@@ -11,6 +11,7 @@ class Perm(StrEnum):
     TICKET_OVERRIDE = "ticket_override"
     VERIFY = "verify"
     WINDOWS_MANAGE = "windows_manage"
+    RULES_MANAGE = "rules_manage"
     PROJECTS_MANAGE = "projects_manage"
     SOURCES_MANAGE = "sources_manage"
     USERS_MANAGE = "users_manage"
@@ -31,6 +32,7 @@ ROLES: dict[str, dict] = {
             Perm.TICKET_OVERRIDE,
             Perm.VERIFY,
             Perm.WINDOWS_MANAGE,
+            Perm.RULES_MANAGE,
             Perm.AUDIT_VIEW,
         },
     },
