@@ -1,0 +1,73 @@
+# «Устранение»: API, веб-интерфейс и PostgreSQL.
+#
+#   scripts/gen-env.sh        # один раз: .env со случайными секретами
+#   docker compose up --build # http://localhost:18081
+#
+# Порты хоста по контракту «Платформы»: web 18081, api 18001, db 15433
+# (меняются в .env: VM_WEB_PORT, VM_API_PORT, VM_DB_PORT).
+
+# Ротация логов контейнеров: без неё json-логи Docker растут без ограничений.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  app:
+    build: ./backend
+    image: vm-ustranenie-app:${VM_IMAGE_TAG:-local}
+    env_file: .env
+    environment:
+      # Адрес БД собирается из POSTGRES_* — пароль задаётся в .env один раз.
+      VM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vm}:${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env (scripts/gen-env.sh)}@db:5432/${POSTGRES_DB:-vm}
+    depends_on:
+      db:
+        condition: service_healthy
+    # API нужен снаружи только для отладки: веб ходит в него по сети compose,
+    # поэтому порт открыт только на localhost хоста.
+    ports:
+      - "127.0.0.1:${VM_API_PORT:-18001}:8000"
+    # ENTRYPOINT образа (backend/docker/entrypoint.sh): проверка секретов ->
+    # миграции -> запуск API (первый администратор — из .env при старте).
+    # Готовность (HEALTHCHECK образа): БД доступна и схема на последней миграции.
+    restart: unless-stopped
+    logging: *default-logging
+
+  web:
+    # React + nginx без root. nginx отдаёт SPA и проксирует /api/* на app с
+    # отрезанием префикса: один origin, CORS не нужен.
+    build: ./frontend
+    image: vm-ustranenie-web:${VM_IMAGE_TAG:-local}
+    environment:
+      API_UPSTREAM: http://app:8000
+    depends_on:
+      app:
+        condition: service_healthy
+    # Единственный порт, нужный пользователям.
+    ports:
+      - "${VM_WEB_PORT:-18081}:8080"
+    restart: unless-stopped
+    logging: *default-logging
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vm}
+      POSTGRES_USER: ${POSTGRES_USER:-vm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env (scripts/gen-env.sh)}
+    volumes:
+      - vm_pg_data:/var/lib/postgresql/data
+    # Только localhost хоста (резервные копии, отладка).
+    ports:
+      - "127.0.0.1:${VM_DB_PORT:-15433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  vm_pg_data:
