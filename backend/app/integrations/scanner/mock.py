@@ -148,6 +148,7 @@ class MockScanner:
             return copy.deepcopy(meta)
 
     def _run_list(self, eid: int, params: httpx.QueryParams) -> httpx.Response:
+        self._engagement(eid)
         items = [
             self._run_meta(r) for r in sorted(self._runs, reverse=True) if self._runs[r]["run"]["engagement_id"] == eid
         ]

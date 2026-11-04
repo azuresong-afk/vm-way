@@ -2,7 +2,7 @@ from sqlalchemy import select
 
 from app import bootstrap
 from app.config import get_settings
-from app.models import AuditLog, Project, User
+from app.models import AuditLog, Project, ScannerSource, SourceLink, User
 
 
 def test_first_admin_created_once(db, monkeypatch):
@@ -33,4 +33,6 @@ def test_demo_seed_idempotent(db, monkeypatch):
     finally:
         get_settings.cache_clear()
     assert len(db.scalars(select(Project)).all()) == 1
+    assert [s.base_url for s in db.scalars(select(ScannerSource))] == ["mock://demo"]
+    assert [lk.engagement_id for lk in db.scalars(select(SourceLink))] == [7]
     assert {u.username for u in db.scalars(select(User))} == {"manager", "engineer", "engineer2", "viewer"}
