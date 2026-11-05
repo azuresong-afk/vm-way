@@ -70,6 +70,39 @@ def test_contract_start_run(raw):
     assert bad.status_code == 422 and bad.json()["detail"]["denied_targets"]
 
 
+def test_contract_false_positive_mark(raw):
+    """PUT/DELETE /findings/{id}/false-positive (задача 2.5): отметка по (договор, dedup_key)."""
+    f = raw.get("/runs/102/findings", params={"limit": 1}).json()[0]
+    r = raw.put(f"/findings/{f['id']}/false-positive", json={"reason": "служба не запущена"})
+    marked = sc.FindingOut.model_validate(r.json())
+    assert r.status_code == 200 and marked.false_positive.reason == "служба не запущена"
+    # Отметка видна в находках прогона, а в «Что исправить» находки больше нет.
+    again = next(x for x in raw.get("/runs/102/findings").json() if x["id"] == f["id"])
+    assert again["false_positive"]["marked_by"] == "svc-vm"
+    plan = sc.FixPlanOut.model_validate(raw.get("/runs/102/fixes", params={"limit": 500}).json())
+    assert f["id"] not in {ref.id for t in plan.items for h in t.hosts for ref in h.findings}
+    assert plan.false_positives == 1
+    rows = [sc.FalsePositiveOut.model_validate(x) for x in raw.get("/engagements/7/false-positives").json()]
+    assert [x.dedup_key for x in rows] == [f["dedup_key"]]
+    r = raw.delete(f"/findings/{f['id']}/false-positive")
+    assert r.status_code == 200 and sc.FindingOut.model_validate(r.json()).false_positive is None
+    r = raw.delete(f"/findings/{f['id']}/false-positive")
+    assert r.status_code == 404 and r.json()["detail"] == "finding is not marked as false positive"
+    assert raw.put("/findings/999999/false-positive", json={}).status_code == 404
+
+
+def test_http_unmark_not_marked_is_not_an_error(mock):
+    c = mock.client()
+    fid = c.findings(102)[0]["id"]
+    assert c.unmark_false_positive(fid) is False
+    assert c.mark_false_positive(fid, None)["false_positive"]["reason"] is None
+    assert c.unmark_false_positive(fid) is True
+    mock.can_triage = False
+    with pytest.raises(ScannerError) as e:
+        c.mark_false_positive(fid, "x")
+    assert e.value.status == 403
+
+
 def test_fix_keys_and_dedup_match_scanner_algorithms(mock):
     c = mock.client()
     f = next(x for x in c.findings(100) if x["host"] == "10.20.1.11" and x["software"] == "OpenSSH")

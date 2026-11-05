@@ -34,6 +34,7 @@ def source_out(s: ScannerSource) -> dict:
         "verify_tls": s.verify_tls,
         "auto_import": s.auto_import,
         "poll_minutes": s.poll_minutes,
+        "sync_false_positives": s.sync_false_positives,
         "last_poll_at": s.last_poll_at,
         "last_error": s.last_error,
         "created_at": s.created_at,
@@ -109,6 +110,8 @@ class SourceIn(BaseModel):
     verify_tls: bool = True
     auto_import: bool = True
     poll_minutes: int = Field(default=15, ge=1, le=1440)
+    # Отмечать ложные срабатывания в «Сканере» (задача 2.5), нужна роль operator.
+    sync_false_positives: bool = False
 
     @field_validator("base_url")
     @classmethod
@@ -126,6 +129,7 @@ class SourcePatch(BaseModel):
     verify_tls: bool | None = None
     auto_import: bool | None = None
     poll_minutes: int | None = Field(default=None, ge=1, le=1440)
+    sync_false_positives: bool | None = None
 
     @field_validator("base_url")
     @classmethod
@@ -227,6 +231,8 @@ def test_source(
         warnings.append("У учётной записи нет роли auditor или operator — импорт прогонов не сработает.")
     if not roles & VERIFY_ROLES:
         warnings.append("Нет роли operator — повторная проверка прицельным прогоном будет недоступна.")
+        if s.sync_false_positives:
+            warnings.append("Нет роли operator — отметка ложных срабатываний в «Сканере» не сработает.")
     elif "host_credentials" not in me.get("permissions", []):
         warnings.append("Нет права host_credentials — проверка пакетов по учётной записи будет недоступна.")
     audit.record(

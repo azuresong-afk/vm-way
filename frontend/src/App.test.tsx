@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { App } from "./App";
 import { setToken } from "./api/client";
 import { AuthProvider } from "./auth/AuthContext";
+import type { ExceptionOut } from "./api/types";
 import { mockApi } from "./test/fetchMock";
 import { brief, detail, engineer, manager, me, project, windowOut, windowPlan } from "./test/fixtures";
 
@@ -704,5 +705,139 @@ describe("раскатки", () => {
     expect(await screen.findByRole("heading", { name: "Обновить glibc — заявка №42" })).toBeInTheDocument();
     const body = calls.find((c) => c.method === "POST" && c.path === "/tickets/5/rollouts")!.body as Record<string, unknown>;
     expect(body).toMatchObject({ template: "package", manager: "dnf", packages: ["glibc"], hosts: ["10.20.3.32"], canary_host: "10.20.3.32" });
+  });
+});
+
+describe("исключения", () => {
+  beforeEach(() => setToken("t"));
+  const meta = {
+    approvers: [{ id: 2, username: "manager", display_name: "Петрова А. С." }],
+    sync_available: true,
+    today: "2026-11-05",
+    min_review_on: "2026-11-06",
+    max_review_on: "2027-11-05",
+    default_review_on: "2027-02-03",
+    soon_days: 14,
+  };
+  const ex: ExceptionOut = {
+    id: 9,
+    project_id: "p1",
+    ticket: { id: 5, title: "Обновить glibc на РЕД ОС 7.3 до 2.35-9.el7", status: "in_progress", severity: "high", os: "РЕД ОС 7.3", kind: "package" },
+    kind: "risk_accepted",
+    kind_label: "Принятие риска",
+    status: "pending",
+    status_label: "Ждёт утверждения",
+    reason: "Сервер выводится из эксплуатации в декабре",
+    measures: "Порт закрыт на МЭ",
+    review_on: "2027-02-03",
+    days_left: 90,
+    review_soon: false,
+    requested_by: { id: 7, username: "eng", display_name: "Смирнов Д. В." },
+    requested_at: "2026-11-05T10:00:00Z",
+    approver: { id: 2, username: "manager", display_name: "Петрова А. С." },
+    decided_by: null,
+    decided_at: null,
+    decision_note: "",
+    ended_by: null,
+    ended_at: null,
+    end_reason: "",
+    prev_status: "in_progress",
+    hosts: [],
+    hosts_now: 2,
+    new_hosts: [],
+    vuln_count: 0,
+    extensions: [],
+    sync_scanner: false,
+    sync: {},
+    created_at: "2026-11-05T10:00:00Z",
+    updated_at: "2026-11-05T10:00:00Z",
+    can: { approve: true, reject: true, withdraw: false, revoke: false, extend: false, sync: false },
+  };
+
+  it("исполнитель оформляет принятие риска: утверждающий, дата пересмотра, меры", async () => {
+    const calls = mockApi({
+      "/me": engineer,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/tickets/5": { ...detail, can: { ...detail.can, take: false, exception: true } },
+      "/tickets/5/history": { history: [], comments: [] },
+      "/projects/p1/exception-meta": meta,
+      "POST /tickets/5/exceptions": ex,
+    });
+    renderAt("/tickets/5");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Исключение/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Исключение для заявки №5" });
+    const submit = within(dialog).getByRole("button", { name: "Отправить на утверждение" });
+    expect(submit).toBeDisabled();
+    await user.type(within(dialog).getByRole("textbox", { name: /^Обоснование/ }), "Сервер выводится из эксплуатации в декабре");
+    await user.type(within(dialog).getByRole("textbox", { name: /Компенсирующие меры/ }), "Порт закрыт на МЭ");
+    // Единственный утверждающий выбран сам, дата пересмотра — через 90 дней.
+    expect(within(dialog).getByRole("combobox", { name: /^Утверждающий/ })).toHaveValue("2");
+    await user.click(submit);
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/tickets/5/exceptions")).toBe(true));
+    expect(calls.find((c) => c.path === "/tickets/5/exceptions")!.body).toEqual({
+      kind: "risk_accepted",
+      reason: "Сервер выводится из эксплуатации в декабре",
+      measures: "Порт закрыт на МЭ",
+      approver_id: 2,
+      review_on: "2027-02-03",
+      sync_scanner: false,
+    });
+  });
+
+  it("ложное срабатывание: без даты пересмотра и с отметкой в «Сканере»", async () => {
+    const calls = mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/tickets/5": { ...detail, can: { ...detail.can, take: false, exception: true } },
+      "/tickets/5/history": { history: [], comments: [] },
+      "/projects/p1/exception-meta": { ...meta, approvers: [...meta.approvers, { id: 3, username: "ciso", display_name: "Белов К. А." }] },
+      "POST /tickets/5/exceptions": { ...ex, kind: "false_positive" },
+    });
+    renderAt("/tickets/5");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Исключение/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Исключение для заявки №5" });
+    await user.click(within(dialog).getByRole("radio", { name: "Ложное срабатывание" }));
+    await user.type(within(dialog).getByRole("textbox", { name: /^Обоснование/ }), "Служба не запущена, пакет не используется");
+    await user.selectOptions(within(dialog).getByRole("combobox", { name: /^Утверждающий/ }), "3");
+    expect(within(dialog).getByRole("checkbox", { name: /Отметить ложным срабатыванием в «Сканере»/ })).toBeChecked();
+    await user.click(within(dialog).getByRole("button", { name: "Отправить на утверждение" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/tickets/5/exceptions")).toBe(true));
+    expect(calls.find((c) => c.path === "/tickets/5/exceptions")!.body).toMatchObject({
+      kind: "false_positive",
+      approver_id: 3,
+      review_on: null,
+      sync_scanner: true,
+    });
+  });
+
+  it("утверждающий видит исключение на экране «Исключения» и утверждает его", async () => {
+    const calls = mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/exception-counts": { pending: 1, to_approve: 1, active: 0, review_soon: 0, ended: 0, all: 1, risk_accepted: 0, false_positive: 0 },
+      "/projects/p1/exceptions": [ex],
+      "/exceptions/9": ex,
+      "POST /exceptions/9/approve": { ...ex, status: "active", status_label: "Действует", can: { ...ex.can, approve: false, reject: false } },
+    });
+    renderAt("/exceptions");
+    expect(await screen.findByText("Сервер выводится из эксплуатации в декабре")).toBeInTheDocument();
+    expect(screen.getByText("ждёт вашего решения")).toBeInTheDocument();
+    expect(calls.find((c) => c.path.startsWith("/projects/p1/exceptions"))!.path).toContain("state=pending");
+    const user = userEvent.setup();
+    await user.click(screen.getByText("Сервер выводится из эксплуатации в декабре"));
+    const drawer = await screen.findByRole("dialog", { name: "Исключение №9" });
+    expect(within(drawer).getByText("Порт закрыт на МЭ")).toBeInTheDocument();
+    await user.click(within(drawer).getByRole("button", { name: /Утвердить/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Утвердить исключение №9" });
+    expect(within(dialog).getByText(/перейдёт в «Принят риск» до 03\.02\.2027/)).toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox", { name: /Комментарий/ }), "Согласовано");
+    await user.click(within(dialog).getByRole("button", { name: "Утвердить" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/exceptions/9/approve")).toBe(true));
+    expect(calls.find((c) => c.path === "/exceptions/9/approve")!.body).toEqual({ note: "Согласовано" });
   });
 });

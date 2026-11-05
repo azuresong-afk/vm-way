@@ -60,6 +60,10 @@ class MockScanner:
         self.no_credentials: set[str] = set(world.get("no_credentials", []))
         # Сколько опросов прицельный прогон остаётся «running» (0 — завершён при первом опросе).
         self.running_polls = 1
+        # Отметки «ложное срабатывание»: (договор, dedup_key) → {reason, marked_by, marked_at}.
+        self.fp_marks: dict[tuple[int, str], dict] = {}
+        # Роль сервисной учётки: без operator отметка ложных срабатываний — 403, как в «Сканере».
+        self.can_triage = True
 
     @classmethod
     def shared(cls, name: str = "demo") -> "MockScanner":
@@ -101,6 +105,9 @@ class MockScanner:
             ("GET", r"/runs/(\d+)/findings", lambda r: self._findings(int(r), params)),
             ("GET", r"/runs/(\d+)/fixes", lambda r: self._fixes(int(r), params)),
             ("GET", r"/runs/(\d+)/coverage", lambda r: self._coverage(int(r))),
+            ("PUT", r"/findings/(\d+)/false-positive", lambda f: self._fp_mark(int(f), (body or {}).get("reason"))),
+            ("DELETE", r"/findings/(\d+)/false-positive", lambda f: self._fp_unmark(int(f))),
+            ("GET", r"/engagements/(\d+)/false-positives", lambda e: self._fp_list(int(e))),
         ]
         for method, rx, fn in routes:
             m = re.fullmatch(rx, path)
@@ -168,13 +175,16 @@ class MockScanner:
         return httpx.Response(200, json=items[off : off + lim], headers={"X-Total-Count": str(len(items))})
 
     def _findings(self, run_id: int, params: httpx.QueryParams) -> httpx.Response:
-        items = self._get(run_id)["findings"]
+        r = self._get(run_id)
+        eid = r["run"]["engagement_id"]
+        items = [{**f, "false_positive": self.fp_marks.get((eid, f["dedup_key"]))} for f in r["findings"]]
         off = int(params.get("offset", 0))
         lim = min(int(params.get("limit", 1000)), 1000)
         return httpx.Response(200, json=items[off : off + lim], headers={"X-Total-Count": str(len(items))})
 
     def _fixes(self, run_id: int, params: httpx.QueryParams) -> dict:
-        tasks = self._get(run_id)["fixes"]
+        r = self._get(run_id)
+        tasks = self._without_fp(r)
         off = int(params.get("offset", 0))
         lim = min(int(params.get("limit", 50)), 500)
         kinds: dict[str, int] = {}
@@ -190,11 +200,84 @@ class MockScanner:
             "tasks": len(tasks),
             "hosts": len({h["host"] for t in tasks for h in t["hosts"]}),
             "findings": sum(t["finding_count"] for t in tasks),
-            "false_positives": 0,
+            "false_positives": sum(
+                1 for f in r["findings"] if (r["run"]["engagement_id"], f["dedup_key"]) in self.fp_marks
+            ),
             "kinds": kinds,
             "os": oss,
             "severities": sevs,
         }
+
+    def _without_fp(self, r: dict) -> list[dict]:
+        """«Что исправить» без находок, отмеченных ложными, — как в «Сканере» (fixplan)."""
+        eid = r["run"]["engagement_id"]
+        fp_ids = {f["id"] for f in r["findings"] if (eid, f["dedup_key"]) in self.fp_marks}
+        if not fp_ids:
+            return r["fixes"]
+        out = []
+        for fx in r["fixes"]:
+            hosts = []
+            for h in fx["hosts"]:
+                refs = [ref for ref in h["findings"] if ref["id"] not in fp_ids]
+                if refs:
+                    hosts.append({**h, "findings": refs})
+            if hosts:
+                n = sum(len(h["findings"]) for h in hosts)
+                out.append({**fx, "hosts": hosts, "host_count": len(hosts), "finding_count": n})
+        return out
+
+    # --- ложные срабатывания ---
+    def _finding(self, finding_id: int) -> tuple[int, dict]:
+        # В фикстуре номера находок разных прогонов пересекаются (в «Сканере» они уникальны) —
+        # ищем с последнего прогона: «Устранение» хранит номер из последнего импорта.
+        for _, r in sorted(self._runs.items(), reverse=True):
+            for f in r["findings"]:
+                if f["id"] == finding_id:
+                    return r["run"]["engagement_id"], f
+        raise LookupError("finding not found")
+
+    def _fp_mark(self, finding_id: int, reason: str | None) -> dict | httpx.Response:
+        if not self.can_triage:
+            return httpx.Response(403, json={"detail": "insufficient permissions"})
+        eid, f = self._finding(finding_id)
+        mark = {"reason": (reason or "").strip() or None, "marked_by": "svc-vm", "marked_at": _now()}
+        with self._lock:
+            self.fp_marks[(eid, f["dedup_key"])] = mark
+        return {**f, "false_positive": mark}
+
+    def _fp_unmark(self, finding_id: int) -> dict | httpx.Response:
+        if not self.can_triage:
+            return httpx.Response(403, json={"detail": "insufficient permissions"})
+        eid, f = self._finding(finding_id)
+        with self._lock:
+            if self.fp_marks.pop((eid, f["dedup_key"]), None) is None:
+                return httpx.Response(404, json={"detail": "finding is not marked as false positive"})
+        return {**f, "false_positive": None}
+
+    def _fp_list(self, eid: int) -> list[dict]:
+        self._engagement(eid)
+        out = []
+        seen: dict[str, dict] = {}
+        for r in self._runs.values():
+            if r["run"]["engagement_id"] == eid:
+                for f in r["findings"]:
+                    seen.setdefault(f["dedup_key"], f)
+        for (e, key), m in self.fp_marks.items():
+            if e != eid or key not in seen:
+                continue
+            f = seen[key]
+            out.append(
+                {
+                    "dedup_key": key,
+                    "host": f["host"],
+                    "port": f["port"],
+                    "vuln_id": f["vuln_id"],
+                    "module": f["module"],
+                    "title": f["title"],
+                    **m,
+                }
+            )
+        return out
 
     def _coverage(self, run_id: int) -> dict:
         r = self._get(run_id)

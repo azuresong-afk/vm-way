@@ -15,6 +15,7 @@ from app.models import (
     Rollout,
     ScanRun,
     Ticket,
+    TicketException,
     TicketHistory,
     TicketHost,
     User,
@@ -23,6 +24,7 @@ from app.models import (
     VulnerabilityEvent,
 )
 from app.rbac import Perm
+from app.services import exceptions as exc_svc
 from app.services.assets import asset_brief
 from app.services.rollouts import label as rollout_label
 from app.services.verification import verification_out
@@ -356,11 +358,25 @@ def read_ticket(ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: 
             }
             for r in db.scalars(select(Rollout).where(Rollout.ticket_id == t.id).order_by(Rollout.id.desc()).limit(10))
         ],
-        "can": _can(t, p, verifying=any(v.status in ("requested", "running") for v in checks)),
+        "exceptions": [
+            exc_svc.exception_out(ex, db, Actor(p.user, p.perms, p.ip))
+            for ex in db.scalars(
+                select(TicketException)
+                .where(TicketException.ticket_id == t.id)
+                .order_by(TicketException.id.desc())
+                .limit(10)
+            )
+        ],
+        "can": _can(
+            t,
+            p,
+            verifying=any(v.status in ("requested", "running") for v in checks),
+            has_open_exception=exc_svc.open_for(db, t.id) is not None,
+        ),
     }
 
 
-def _can(t: Ticket, p: Principal, verifying: bool = False) -> dict:
+def _can(t: Ticket, p: Principal, verifying: bool = False, has_open_exception: bool = False) -> dict:
     """Что текущий пользователь может сделать с заявкой — для кнопок в карточке."""
     closed = t.status in CLOSED_STATUSES
     return {
@@ -375,6 +391,8 @@ def _can(t: Ticket, p: Principal, verifying: bool = False) -> dict:
         # Поставить в окно или снять с окна: исполнитель заявки или руководитель.
         "window": not closed
         and (p.can(Perm.TICKET_ASSIGN) or (p.can(Perm.TICKET_WORK) and t.assignee_id == p.user.id)),
+        # Оформить исключение (задача 2.5): исполнитель заявки или руководитель, если исключения ещё нет.
+        "exception": exc_svc.can_request(t, Actor(p.user, p.perms, p.ip)) and not has_open_exception,
     }
 
 

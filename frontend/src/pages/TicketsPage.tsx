@@ -92,9 +92,10 @@ function BulkModal({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Причина обязательна для исключений и возврата из «Исправлено» — спросим всегда, если цель того требует.
-  const need = mode === "status" && reasonRequired("assigned", status);
-  const targets: TicketStatus[] = ["in_progress", "waiting_window", "fixed", "risk_accepted", "false_positive"];
+  // Причина обязательна для возврата из «Исправлено» — спросим всегда, если цель того требует.
+  // Исключения массово не ставятся: у каждого — своё обоснование, утверждающий и дата пересмотра.
+  const need = mode === "status" && reasonRequired("assigned");
+  const targets: TicketStatus[] = ["in_progress", "waiting_window", "fixed"];
   const submit = async () => {
     setBusy(true);
     setError(null);

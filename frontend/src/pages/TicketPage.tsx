@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { CommentOut, HistoryEntry, TicketDetail, TicketStatus, VerificationOut } from "../api/types";
 import { HostsProgress } from "../components/TicketsTable";
 import { TicketActions } from "../components/TicketActions";
+import { TicketExceptions } from "../components/Exceptions";
 import { Commands, CriticalityBadge, Empty, ErrorAlert, HostStatusPill, Loading, RefTags, SeverityBadge, StatusPill } from "../components/ui";
 import { fmtDate, fmtDay, fmtNumber, plural } from "../lib/format";
 import {
@@ -416,6 +417,14 @@ function historyText(h: HistoryEntry): string {
       return `Аварийный стоп раскатки №${String(d.rollout_id)}${why}`;
     case "rollout_finished":
       return `Раскатка №${String(d.rollout_id)} завершена`;
+    case "exception_requested":
+      return `Оформлено исключение «${h.to}», утверждающий — ${String(d.approver ?? "—")}${d.review_on ? `, пересмотр ${String(d.review_on)}` : ""}`;
+    case "exception_rejected":
+      return `Исключение «${h.to}» отклонено${why}`;
+    case "exception_withdrawn":
+      return `Исключение «${h.to}» отозвано${why}`;
+    case "exception_extended":
+      return `Исключение продлено: пересмотр ${h.from || "без даты"} → ${h.to}${why}`;
     default:
       return `${h.action}${h.to ? `: ${h.to}` : ""}`;
   }
@@ -533,6 +542,10 @@ export function TicketPage() {
               </span>
             )}
             {d.reboot && <span className="pill pill-warn">нужна перезагрузка</span>}
+            {d.exceptions.some((e) => e.status === "pending") && <span className="pill pill-warn">исключение ждёт утверждения</span>}
+            {d.exceptions.some((e) => e.status === "active" && e.review_on) && (
+              <span className="pill pill-muted">пересмотр {fmtDay(d.exceptions.find((e) => e.status === "active")!.review_on)}</span>
+            )}
             {d.status === "no_vendor_fix" && (
               <span className="pill pill-muted">
                 <AlertTriangle size={12} aria-hidden="true" /> ждём исправления производителя
@@ -550,6 +563,7 @@ export function TicketPage() {
         </div>
         <div className="grow-2 stack" style={{ gap: "var(--s3)" }}>
           <Facts t={d} />
+          <TicketExceptions t={d} onChanged={() => void t.reload()} />
           <Rollouts t={d} />
           <Checks t={d} />
           <Activity t={d} onChanged={() => void t.reload()} />

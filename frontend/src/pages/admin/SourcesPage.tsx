@@ -17,6 +17,7 @@ function SourceModal({ source, onClose, onDone }: { source: SourceOut | null; on
     verify_tls: source?.verify_tls ?? true,
     auto_import: source?.auto_import ?? true,
     poll_minutes: source?.poll_minutes ?? 15,
+    sync_false_positives: source?.sync_false_positives ?? false,
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +95,13 @@ function SourceModal({ source, onClose, onDone }: { source: SourceOut | null; on
         <span>
           <b>Импортировать новые прогоны автоматически</b>
           <small>Иначе — только по кнопке «Импортировать новые прогоны» на «Сводке».</small>
+        </span>
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={!!d.sync_false_positives} onChange={(e) => up({ sync_false_positives: e.target.checked })} />
+        <span>
+          <b>Отмечать ложные срабатывания в «Сканере»</b>
+          <small>Утверждённое исключение «Ложное срабатывание» можно отметить и в «Сканере»; снятие исключения снимает отметку. Нужна роль operator у учётной записи.</small>
         </span>
       </label>
       <label className="check">

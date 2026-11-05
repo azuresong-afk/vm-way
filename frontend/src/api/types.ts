@@ -26,6 +26,7 @@ export type Perm =
   | "rules_manage"
   | "credentials_manage"
   | "rollout_approve"
+  | "exception_approve"
   | "projects_manage"
   | "sources_manage"
   | "users_manage"
@@ -217,6 +218,7 @@ export interface TicketCan {
   verify: boolean;
   window: boolean;
   rollout: boolean;
+  exception: boolean;
 }
 
 export interface TicketDetail extends TicketBrief {
@@ -230,6 +232,7 @@ export interface TicketDetail extends TicketBrief {
   watching: boolean;
   verifications: VerificationOut[];
   rollouts: TicketRolloutBrief[];
+  exceptions: ExceptionOut[];
   can: TicketCan;
 }
 
@@ -434,6 +437,7 @@ export interface SourceOut {
   verify_tls: boolean;
   auto_import: boolean;
   poll_minutes: number;
+  sync_false_positives: boolean;
   last_poll_at: string | null;
   last_error: string | null;
   created_at: string;
@@ -448,6 +452,7 @@ export interface SourceIn {
   verify_tls: boolean;
   auto_import: boolean;
   poll_minutes: number;
+  sync_false_positives?: boolean;
 }
 
 export interface SourceTestOut {
@@ -970,3 +975,95 @@ export interface RolloutMeta {
   host_statuses: { id: RolloutHostStatus; label: string }[];
   name_pattern: string;
 }
+
+// --- исключения (задача 2.5) ---
+export type ExceptionKind = "risk_accepted" | "false_positive";
+export type ExceptionStatus = "pending" | "active" | "rejected" | "withdrawn" | "revoked" | "expired";
+export type ExceptionState = "all" | "pending" | "to_approve" | "active" | "review_soon" | "ended";
+
+export interface ExceptionSync {
+  action?: "mark" | "unmark";
+  state?: "queued" | "done" | "partial" | "failed" | "skipped";
+  at?: string;
+  done?: number;
+  failed?: number;
+  skipped?: number;
+  total?: number;
+  marked?: string[];
+  errors?: { host: string; vuln: string; error: string }[];
+  note?: string;
+}
+
+export interface ExceptionExtension {
+  at: string;
+  by: number;
+  by_name: string;
+  from: string;
+  to: string;
+  reason: string;
+}
+
+export interface ExceptionCan {
+  approve: boolean;
+  reject: boolean;
+  withdraw: boolean;
+  revoke: boolean;
+  extend: boolean;
+  sync: boolean;
+}
+
+export interface ExceptionOut {
+  id: number;
+  project_id: string;
+  ticket: { id: number; title: string; status: TicketStatus; severity: Severity; os: string; kind: string } | null;
+  kind: ExceptionKind;
+  kind_label: string;
+  status: ExceptionStatus;
+  status_label: string;
+  reason: string;
+  measures: string;
+  review_on: string | null;
+  days_left: number | null;
+  review_soon: boolean;
+  requested_by: UserRef | null;
+  requested_at: string;
+  approver: UserRef | null;
+  decided_by: UserRef | null;
+  decided_at: string | null;
+  decision_note: string;
+  ended_by: UserRef | null;
+  ended_at: string | null;
+  end_reason: string;
+  prev_status: string;
+  hosts: string[];
+  hosts_now: number;
+  new_hosts: string[];
+  vuln_count: number;
+  extensions: ExceptionExtension[];
+  sync_scanner: boolean;
+  sync: ExceptionSync;
+  created_at: string;
+  updated_at: string;
+  can?: ExceptionCan;
+}
+
+export interface ExceptionIn {
+  kind: ExceptionKind;
+  reason: string;
+  measures?: string;
+  approver_id: number | null;
+  review_on: string | null;
+  sync_scanner?: boolean;
+}
+
+export interface ExceptionMeta {
+  approvers: UserRef[];
+  sync_available: boolean;
+  today: string;
+  min_review_on: string;
+  max_review_on: string;
+  default_review_on: string;
+  soon_days: number;
+}
+
+export type ExceptionCounts = Record<ExceptionState | ExceptionKind, number>;

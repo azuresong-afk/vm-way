@@ -2,7 +2,8 @@
 
 Задача сначала записывается в БД (queued), затем исполняется в пуле. При старте процесса
 незавершённые задачи (queued/running) возвращаются в очередь — работа переживает рестарт.
-Опросчик раз в минуту ставит в очередь опрос источников, у которых подошёл срок.
+Опросчик раз в минуту ставит в очередь опрос источников, у которых подошёл срок, и закрывает
+исключения с прошедшей датой пересмотра.
 """
 
 import logging
@@ -113,8 +114,22 @@ class JobRunner:
                             self.submit(job.id)
             except Exception:  # noqa: BLE001
                 log.exception("Сбой опроса источников")
+            self._expire_exceptions()
             if self._stop.wait(60):
                 return
+
+    def _expire_exceptions(self) -> None:
+        """Исключения, у которых прошла дата пересмотра, истекают (задача 2.5)."""
+        from app.services.exceptions import expire_due
+
+        try:
+            with SessionLocal() as db:
+                expired = expire_due(db)
+                db.commit()
+                for job in expired:
+                    self.submit(job.id)
+        except Exception:  # noqa: BLE001
+            log.exception("Сбой проверки дат пересмотра исключений")
 
 
 def _safe_error(e: Exception) -> str:

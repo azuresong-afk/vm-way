@@ -88,6 +88,17 @@ class FalsePositiveMarkOut(_Strict):
     marked_at: datetime | None
 
 
+class FalsePositiveOut(FalsePositiveMarkOut):
+    """GET /engagements/{id}/false-positives: действующая отметка договора."""
+
+    dedup_key: str
+    host: str
+    port: int | None
+    vuln_id: str | None
+    module: str
+    title: str
+
+
 class FindingOut(_Strict):
     id: int
     dedup_key: str

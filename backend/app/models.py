@@ -1,4 +1,4 @@
-"""Модель данных «Устранения» (этап 1; окна, активы и правила, SSH-учётки, ключи хостов и раскатки этапа 2)."""
+"""Модель данных «Устранения»: этап 1 и этап 2 (окна, активы, правила, SSH, раскатки, исключения)."""
 
 import uuid
 from datetime import date, datetime
@@ -68,6 +68,9 @@ class ScannerSource(Base):
     poll_minutes: Mapped[int] = mapped_column(Integer, default=15)
     last_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str] = mapped_column(Text, default="")
+    # Отмечать ложные срабатывания в «Сканере» (задача 2.5). Выключено по умолчанию: сервисной
+    # учётке нужна роль operator (право triage_findings).
+    sync_false_positives: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -610,3 +613,48 @@ class RolloutStep(Base):
     stderr: Mapped[str] = mapped_column(Text, default="")
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TicketException(Base):
+    """Исключение по заявке (задача 2.5): принятие риска или ложное срабатывание.
+
+    Жизненный цикл: pending (ждёт утверждающего) → active (заявка в статусе исключения) →
+    revoked (снято досрочно) | expired (прошла дата пересмотра). Из pending — rejected или withdrawn.
+    У заявки одновременно не больше одного исключения в pending/active.
+    """
+
+    __tablename__ = "ticket_exceptions"
+    __table_args__ = (Index("ix_exceptions_project_status", "project_id", "status"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))  # risk_accepted | false_positive
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    reason: Mapped[str] = mapped_column(Text)
+    measures: Mapped[str] = mapped_column(Text, default="")  # компенсирующие меры
+    review_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    requested_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    approver_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_note: Mapped[str] = mapped_column(Text, default="")
+    ended_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_reason: Mapped[str] = mapped_column(Text, default="")
+    # Статус заявки до исключения и хосты на момент утверждения.
+    prev_status: Mapped[str] = mapped_column(String(32), default="")
+    hosts: Mapped[list] = mapped_column(JSON, default=list)
+    vuln_count: Mapped[int] = mapped_column(Integer, default=0)
+    extensions: Mapped[list] = mapped_column(JSON, default=list)
+    # Отметка ложного срабатывания в «Сканере»: просили ли и что вышло.
+    sync_scanner: Mapped[bool] = mapped_column(Boolean, default=False)
+    sync: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    ticket: Mapped[Ticket] = relationship()
+    requester: Mapped[User | None] = relationship(foreign_keys=[requested_by])
+    approver: Mapped[User | None] = relationship(foreign_keys=[approver_id])
+    decider: Mapped[User | None] = relationship(foreign_keys=[decided_by])
+    ender: Mapped[User | None] = relationship(foreign_keys=[ended_by])

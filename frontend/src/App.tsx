@@ -7,6 +7,7 @@ import { Layout } from "./components/Layout";
 import { Empty, ErrorAlert, Loading } from "./components/ui";
 import { AccessPage } from "./pages/AccessPage";
 import { AssetsPage } from "./pages/AssetsPage";
+import { ExceptionsPage } from "./pages/ExceptionsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MyTasksPage } from "./pages/MyTasksPage";
 import { RolloutPage } from "./pages/RolloutPage";
@@ -116,6 +117,7 @@ export function App() {
         <Route path="windows" element={work("view", <WindowsPage />)} />
         <Route path="rollouts" element={work("view", <RolloutsPage />)} />
         <Route path="rollouts/:id" element={<RequirePerm perm="view"><RolloutPage /></RequirePerm>} />
+        <Route path="exceptions" element={work("view", <ExceptionsPage />)} />
         <Route path="assets" element={work("view", <AssetsPage />)} />
         <Route path="rules" element={work("view", <RulesPage />)} />
         <Route path="access" element={work("view", <AccessPage />)} />

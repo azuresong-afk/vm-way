@@ -970,3 +970,7 @@ a.kpi-mini:hover { color: var(--accent-text); text-decoration: none; }
 .log-step.is-bad .log-meta { color: var(--danger); }
 .log-out { margin: 0; padding: 8px 10px; border-top: 1px solid var(--border); font-size: 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .log-err { color: var(--danger); }
+
+/* Исключения (задача 2.5) */
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nav-link .count { margin-left: auto; }

@@ -1,4 +1,4 @@
-import type { Criticality, HostStatus, RolloutHostStatus, RolloutStatus, Severity, StageState, TicketStatus } from "../api/types";
+import type { Criticality, ExceptionKind, ExceptionStatus, HostStatus, RolloutHostStatus, RolloutStatus, Severity, StageState, TicketStatus } from "../api/types";
 
 export const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];
 
@@ -64,10 +64,24 @@ export const STATUS_PILL: Record<TicketStatus, string> = {
   regression: "pill-danger",
 };
 
-/** Нужна ли причина для перехода (как в backend/app/services/workflow.py). */
-export function reasonRequired(from: TicketStatus, to: TicketStatus): boolean {
-  return EXCEPTION_STATUSES.includes(to) || EXCEPTION_STATUSES.includes(from) || from === "fixed";
+/** Нужна ли причина для перехода (как в backend/app/services/workflow.py). Исключения — отдельной формой. */
+export function reasonRequired(from: TicketStatus): boolean {
+  return from === "fixed";
 }
+
+export const EXCEPTION_KIND_LABEL: Record<ExceptionKind, string> = {
+  risk_accepted: "Принятие риска",
+  false_positive: "Ложное срабатывание",
+};
+
+export const EXCEPTION_STATUS_PILL: Record<ExceptionStatus, string> = {
+  pending: "pill-warn",
+  active: "pill-info",
+  rejected: "pill-danger",
+  withdrawn: "pill-muted",
+  revoked: "pill-muted",
+  expired: "pill-muted",
+};
 
 export const HOST_STATUS_LABEL: Record<HostStatus, string> = {
   open: "Открыт",
