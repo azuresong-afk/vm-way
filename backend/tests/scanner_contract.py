@@ -191,6 +191,43 @@ class CoverageOut(_Strict):
     legacy: bool = False
 
 
+class AssetGroupRef(_Strict):
+    id: int
+    name: str
+
+
+class AssetOut(_Strict):
+    id: int
+    engagement_id: int
+    address: str
+    hostname: str | None
+    owner: str | None
+    criticality: str
+    notes: str | None
+    tags: list[str]
+    groups: list[AssetGroupRef]
+    created_at: datetime | None
+    os_guess: str | None = None
+    os_family: str | None = None
+    os_family_label: str | None = None
+    last_run_id: int | None = None
+    finding_counts: dict[str, int] = {}
+    findings_total: int = 0
+    checked_run_id: int | None = None
+    source: str = "manual"
+    first_seen_at: datetime | None = None
+    last_seen_at: datetime | None = None
+
+
+class AssetGroupOut(_Strict):
+    id: int
+    engagement_id: int
+    name: str
+    asset_count: int
+    created_at: datetime | None
+
+
+CRITICALITY = {"low", "medium", "high", "critical"}
 RUN_STATUSES = {"pending", "running", "done", "partial", "failed", "stopped", "interrupted"}
 FINDING_STATUSES = {"open", "fixed", "new", "regression"}
 SEVERITIES = {"critical", "high", "medium", "low", "info"}

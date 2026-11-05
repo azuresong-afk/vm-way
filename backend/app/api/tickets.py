@@ -8,6 +8,9 @@ from app.api.common import not_found, paginate
 from app.db import get_db
 from app.deps import Principal, get_project, require
 from app.models import (
+    Asset,
+    AssetGroup,
+    AssetGroupMember,
     Comment,
     ScanRun,
     Ticket,
@@ -19,6 +22,7 @@ from app.models import (
     VulnerabilityEvent,
 )
 from app.rbac import Perm
+from app.services.assets import asset_brief
 from app.services.verification import verification_out
 from app.services.workflow import CLOSED_STATUSES, SEVERITIES, STATUSES, Actor, allowed_targets, watchers
 
@@ -110,9 +114,30 @@ def ticket_facets(project_id: str, p: Principal = Depends(require(Perm.VIEW)), d
     kind_rows = db.execute(
         select(Ticket.kind, func.count(), is_open).where(Ticket.project_id == project_id).group_by(Ticket.kind)
     ).all()
+    group_rows = db.execute(
+        select(
+            AssetGroup.name,
+            func.count(func.distinct(Ticket.id)),
+            func.count(func.distinct(case((Ticket.status.in_(OPEN_STATUSES), Ticket.id)))),
+        )
+        .join(AssetGroupMember, AssetGroupMember.group_id == AssetGroup.id)
+        .join(Asset, Asset.id == AssetGroupMember.asset_id)
+        .join(TicketHost, TicketHost.host == Asset.address)
+        .join(Ticket, Ticket.id == TicketHost.ticket_id)
+        .where(AssetGroup.project_id == project_id, Ticket.project_id == project_id)
+        .group_by(AssetGroup.name)
+    ).all()
+    group_counts = {n: (t, o) for n, t, o in group_rows}
+    all_groups = db.scalars(
+        select(AssetGroup.name).where(AssetGroup.project_id == project_id).order_by(AssetGroup.name)
+    )
     return {
         "os": [{"id": o, "total": n, "open": int(k or 0)} for o, n, k in os_rows],
         "kinds": [{"id": o, "total": n, "open": int(k or 0)} for o, n, k in sorted(kind_rows)],
+        "groups": [
+            {"id": g, "total": group_counts.get(g, (0, 0))[0], "open": group_counts.get(g, (0, 0))[1]}
+            for g in all_groups
+        ],
     }
 
 
@@ -128,6 +153,7 @@ def list_tickets(
     assignee: str | None = None,
     window: str | None = None,
     host: str | None = None,
+    group: str | None = Query(default=None, max_length=128),
     q: str | None = Query(default=None, max_length=200),
     sort: str = Query(default="priority", pattern="^(priority|severity|created|updated|title|hosts)$"),
     order: str = Query(default="asc", pattern="^(asc|desc)$"),
@@ -172,6 +198,17 @@ def list_tickets(
         stmt = stmt.where(Ticket.window_id == int(window))
     if host:
         stmt = stmt.where(Ticket.id.in_(select(TicketHost.ticket_id).where(TicketHost.host == host.strip())))
+    if group:
+        # Группа активов (задача 2.2): хотя бы один хост заявки входит в группу.
+        stmt = stmt.where(
+            Ticket.id.in_(
+                select(TicketHost.ticket_id)
+                .join(Asset, Asset.address == TicketHost.host)
+                .join(AssetGroupMember, AssetGroupMember.asset_id == Asset.id)
+                .join(AssetGroup, AssetGroup.id == AssetGroupMember.group_id)
+                .where(Asset.project_id == project_id, AssetGroup.name == group)
+            )
+        )
     if q and q.strip():
         like = f"%{q.strip()}%"
         num = q.strip().lstrip("№#").strip()
@@ -261,6 +298,14 @@ def read_ticket(ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: 
     run_ids = {h.last_check_run_id for h in t.hosts if h.last_check_run_id}
     runs = {r.id: r for r in db.scalars(select(ScanRun).where(ScanRun.id.in_(run_ids)))} if run_ids else {}
     ws = watchers(db, t)
+    host_assets = {
+        a.address: a
+        for a in db.scalars(
+            select(Asset)
+            .where(Asset.project_id == t.project_id, Asset.address.in_([h.host for h in t.hosts]))
+            .options(selectinload(Asset.groups))
+        )
+    }
     checks = list(
         db.scalars(select(Verification).where(Verification.ticket_id == t.id).order_by(Verification.id.desc()).limit(5))
     )
@@ -279,6 +324,7 @@ def read_ticket(ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: 
                 "status": h.status,
                 "reason": h.reason,
                 "vulnerability_ids": by_host.get(h.host, []),
+                "asset": asset_brief(host_assets.get(h.host)),
                 "last_check": (
                     {
                         "run_id": h.last_check_run_id,

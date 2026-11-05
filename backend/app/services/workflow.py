@@ -144,12 +144,13 @@ def _check_transition(t: Ticket, actor: Actor, to: str) -> str:
 
 
 def _history(
-    db: Session, t: Ticket, actor: Actor, action: str, *, from_value="", to_value="", details: dict | None = None
+    db: Session, t: Ticket, actor: Actor | None, action: str, *, from_value="", to_value="", details: dict | None = None
 ) -> None:
+    """actor None — изменение сделала система (импорт, правило назначения)."""
     db.add(
         TicketHistory(
             ticket_id=t.id,
-            actor_id=actor.user.id,
+            actor_id=actor.user.id if actor else None,
             action=action,
             from_value=str(from_value)[:200],
             to_value=str(to_value)[:200],
@@ -158,15 +159,15 @@ def _history(
     )
 
 
-def _audit(db: Session, t: Ticket, actor: Actor, action: str, details: dict) -> None:
+def _audit(db: Session, t: Ticket, actor: Actor | None, action: str, details: dict) -> None:
     audit.record(
         db,
-        actor.user,
+        actor.user if actor else None,
         action,
         object_type="ticket",
         object_id=t.id,
         project_id=t.project_id,
-        ip=actor.ip,
+        ip=actor.ip if actor else "",
         details={"ticket_id": t.id, **details},
     )
 
@@ -223,8 +224,18 @@ def _check_assignee(db: Session, assignee_id: int) -> User:
     return u
 
 
-def assign(db: Session, t: Ticket, actor: Actor, assignee_id: int | None, *, via: str = "assign") -> bool:
-    """Назначает исполнителя (None — снять). Возвращает False, если ничего не изменилось."""
+def assign(
+    db: Session,
+    t: Ticket,
+    actor: Actor | None,
+    assignee_id: int | None,
+    *,
+    via: str = "assign",
+    extra: dict | None = None,
+) -> bool:
+    """Назначает исполнителя (None — снять). Возвращает False, если ничего не изменилось.
+
+    actor None — назначает система по правилу назначения (via="rule", в extra — правило)."""
     if t.status in CLOSED_STATUSES:
         raise WorkflowError(f"Заявка закрыта («{label(t.status)}»): назначение не меняется")
     new = _check_assignee(db, assignee_id) if assignee_id is not None else None
@@ -247,6 +258,7 @@ def assign(db: Session, t: Ticket, actor: Actor, assignee_id: int | None, *, via
         "from_name": _name(old),
         "to_name": _name(new),
         "via": via,
+        **(extra or {}),
     }
     _history(
         db, t, actor, "assigned" if new else "unassigned", from_value=_name(old), to_value=_name(new), details=details

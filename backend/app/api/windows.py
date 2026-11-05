@@ -37,6 +37,7 @@ class WindowIn(BaseModel):
     valid_from: date | None = None
     valid_until: date | None = None
     hosts: list[str] = Field(default_factory=list, max_length=2000)
+    groups: list[str] = Field(default_factory=list, max_length=100)
     note: str = Field(default="", max_length=2000)
     is_active: bool = True
 
@@ -52,6 +53,7 @@ class WindowPatch(BaseModel):
     valid_from: date | None = None
     valid_until: date | None = None
     hosts: list[str] | None = Field(default=None, max_length=2000)
+    groups: list[str] | None = Field(default=None, max_length=100)
     note: str | None = Field(default=None, max_length=2000)
     is_active: bool | None = None
 
@@ -82,6 +84,7 @@ def _snapshot(w: MaintenanceWindow) -> dict:
         "kind": w.kind,
         "schedule": svc.schedule_text(w),
         "hosts": len(w.hosts or []),
+        "groups": w.groups or [],
         "is_active": w.is_active,
     }
 
@@ -148,7 +151,16 @@ def update_window(
     w = _get(db, window_id, p, lock=True)
     before = _snapshot(w)
     for k, v in body.model_dump(exclude_unset=True).items():
-        if v is None and k in ("name", "timezone", "weekdays", "start_time", "duration_minutes", "hosts", "note"):
+        if v is None and k in (
+            "name",
+            "timezone",
+            "weekdays",
+            "start_time",
+            "duration_minutes",
+            "hosts",
+            "groups",
+            "note",
+        ):
             continue
         setattr(w, k, v.strip() if k == "name" else v)
     try:
@@ -217,7 +229,8 @@ def calendar(
     """Даты окон и блэкаутов в диапазоне (по умолчанию — 4 недели вперёд) с итогом по каждой."""
     get_project(db, project_id, p)
     start, end = _range(start, end, 28)
-    occ = svc.occurrences(svc.project_windows(db, project_id), start, end, include_blackouts=True)
+    ws = svc.project_windows(db, project_id)
+    occ = svc.occurrences(ws, start, end, include_blackouts=True, scopes=svc.scopes_for(db, ws))
     items = []
     for o in occ:
         row = o.out()

@@ -1,4 +1,4 @@
-"""Модель данных «Устранения» (этап 1 и окна обслуживания этапа 2)."""
+"""Модель данных «Устранения» (этап 1; окна обслуживания, активы и правила назначения этапа 2)."""
 
 import uuid
 from datetime import date, datetime
@@ -134,11 +134,101 @@ class MaintenanceWindow(Base):
     valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     hosts: Mapped[list] = mapped_column(JSON, default=list)
+    # Группы активов «Сканера» по имени (задача 2.2): охват — хосты списка плюс хосты групп.
+    groups: Mapped[list] = mapped_column(JSON, default=list)
     note: Mapped[str] = mapped_column(Text, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Asset(Base):
+    """Актив «Сканера» (задача 2.2) — копия для правил назначения, фильтров и охвата окон.
+
+    Ключ сопоставления с хостами заявок — `(project_id, address)`, как в контракте платформы.
+    Источник истины — «Сканер»: строки перезаписываются при каждой синхронизации."""
+
+    __tablename__ = "assets"
+    __table_args__ = (UniqueConstraint("project_id", "address", name="uq_asset_project_address"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("scanner_sources.id", ondelete="SET NULL"), nullable=True)
+    engagement_id: Mapped[int] = mapped_column(Integer)
+    scanner_asset_id: Mapped[int] = mapped_column(Integer)
+    address: Mapped[str] = mapped_column(String(64))
+    hostname: Mapped[str] = mapped_column(String(253), default="")
+    owner: Mapped[str] = mapped_column(String(256), default="")
+    criticality: Mapped[str] = mapped_column(String(16), default="medium")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    os_family: Mapped[str] = mapped_column(String(64), default="")
+    os_guess: Mapped[str] = mapped_column(String(200), default="")
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    groups: Mapped[list["AssetGroup"]] = relationship(
+        secondary="asset_group_members", back_populates="assets", order_by="AssetGroup.name"
+    )
+
+
+class AssetGroup(Base):
+    """Группа активов «Сканера». Группы с одинаковым именем из разных проектов «Сканера» сливаются."""
+
+    __tablename__ = "asset_groups"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_asset_group_project_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    assets: Mapped[list[Asset]] = relationship(secondary="asset_group_members", back_populates="groups")
+
+
+class AssetGroupMember(Base):
+    __tablename__ = "asset_group_members"
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("asset_groups.id", ondelete="CASCADE"), primary_key=True)
+
+
+class Team(Base):
+    """Команда исполнителей (задача 2.2): цель правила назначения с распределением по загрузке."""
+
+    __tablename__ = "teams"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    members: Mapped[list[User]] = relationship(secondary="team_members", order_by="User.id")
+
+
+class TeamMember(Base):
+    __tablename__ = "team_members"
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+
+
+class AssignmentRule(Base):
+    """Правило назначения (задача 2.2). Правила проверяются по порядку `position`, срабатывает первое.
+
+    Условия: внутри списка — «любое из», между списками — «и», пустой список — «любое значение».
+    Группа, тег и владелец — свойства хостов заявки (`host_match`: все хосты или хотя бы один),
+    ОС и вид — свойства самой заявки. Цель — исполнитель или команда (по загрузке)."""
+
+    __tablename__ = "assignment_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(String(200))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    groups: Mapped[list] = mapped_column(JSON, default=list)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    owners: Mapped[list] = mapped_column(JSON, default=list)
+    os: Mapped[list] = mapped_column(JSON, default=list)
+    kinds: Mapped[list] = mapped_column(JSON, default=list)
+    host_match: Mapped[str] = mapped_column(String(8), default="all")  # all | any
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="RESTRICT"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])
+    team: Mapped[Team | None] = relationship()
 
 
 class Ticket(Base):

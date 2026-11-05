@@ -63,15 +63,33 @@ def apply_results(
     targets: list[str] | None = None,
     strict_tickets: list[int] | None = None,
 ) -> dict:
-    """Перенос результатов в «Устранение»: зеркало уязвимостей и заявки (задача 1.4), затем закрытие
-    исправленного и регрессии по покрытию прогона (задача 1.6)."""
-    from app.services import closure, mirror
+    """Перенос результатов в «Устранение»: зеркало уязвимостей и заявки (задача 1.4), закрытие
+    исправленного и регрессии по покрытию прогона (задача 1.6), затем правила назначения для
+    созданных заявок (задача 2.2)."""
+    from app.services import closure, mirror, rules
 
     stats = mirror.apply(db, project, run, results.findings, results.fixes)
+    created = stats.pop("created_ids", [])
     stats |= closure.apply(
         db, project, run, results.findings, results.coverage, targets=targets or [], strict_tickets=strict_tickets or []
     )
+    if created:
+        stats["tickets_auto_assigned"] = rules.apply(db, project.id, ticket_ids=created)["assigned"]
     return stats
+
+
+def sync_assets(db: Session, link: SourceLink, client: ScannerClient) -> dict:
+    """Активы и группы «Сканера» по привязке (задача 2.2). Ошибка не останавливает импорт:
+    заявки важнее, активы обновятся при следующем импорте или по кнопке."""
+    from app.services import assets
+
+    try:
+        with db.begin_nested():
+            st = assets.sync_link(db, link, client)
+    except ScannerError as e:
+        log.warning("Активы «Сканера» не получены (привязка %s): %s", link.id, e)
+        return {"assets_error": str(e)[:300]}
+    return {"assets": st["assets"], "assets_removed": st["removed"]}
 
 
 def import_run(
@@ -133,6 +151,8 @@ def import_run(
             select(ScanRun).where(ScanRun.source_id == link.source_id, ScanRun.scanner_run_id == scanner_run_id)
         )
         return existing, False
+    # Активы — до заявок: правила назначения смотрят на группы, теги и владельцев хостов.
+    run.stats = {**run.stats, **sync_assets(db, link, client)}
     for c in results.coverage:
         db.add(
             RunCoverage(

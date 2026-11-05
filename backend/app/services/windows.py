@@ -7,8 +7,9 @@
   по `valid_until` включительно;
 - `blackout` — блэкаут: интервал, в который изменения запрещены.
 
-Охват окна — список хостов; пустой список — все хосты проекта. Блэкаут с пустым охватом
-запрещает работы во всём проекте, с хостами — только на этих хостах.
+Охват окна — хосты списка плюс хосты групп активов «Сканера» (группы — с задачи 2.2, по имени,
+состав берётся на момент расчёта); ни хостов, ни групп — все хосты проекта. Блэкаут без охвата
+запрещает работы во всём проекте, с охватом — только на его хостах.
 
 Выбор: даты повторяющегося окна, которые хоть немного пересекаются с блэкаутом, выпадают
 целиком (для своих хостов): обрезанное окно легко принять за полноценное.
@@ -114,6 +115,25 @@ def validate(w: MaintenanceWindow) -> None:
         w.weekdays, w.start_time, w.duration_minutes = [], "", 0
         w.valid_from = w.valid_until = None
     w.hosts = clean_hosts(w.hosts)
+    groups: list[str] = []
+    for g in w.groups or []:
+        g = str(g).strip()[:128]
+        if g and g not in groups:
+            groups.append(g)
+    w.groups = groups
+
+
+def scopes_for(db: Session, windows: list[MaintenanceWindow]) -> dict[int, frozenset[str] | None]:
+    """Охват окон: хосты списка и групп; None — весь проект. Пустое множество — никого (группы пусты)."""
+    from app.services.assets import group_hosts
+
+    out: dict[int, frozenset[str] | None] = {}
+    for w in windows:
+        if not w.hosts and not w.groups:
+            out[w.id] = None
+        else:
+            out[w.id] = frozenset(w.hosts or []) | frozenset(group_hosts(db, w.project_id, w.groups or []))
+    return out
 
 
 def schedule_text(w: MaintenanceWindow) -> str:
@@ -165,15 +185,28 @@ class Occurrence:
     start: datetime
     end: datetime
     blackouts: list[MaintenanceWindow] = field(default_factory=list)
+    # Охват окон по id (scopes_for); окна, которых здесь нет, — по списку хостов.
+    scopes: dict[int, frozenset[str] | None] = field(default_factory=dict)
+
+    def scope_of(self, w: MaintenanceWindow) -> frozenset[str] | None:
+        if w.id in self.scopes:
+            return self.scopes[w.id]
+        return frozenset(w.hosts) if w.hosts else None
+
+    @property
+    def scope(self) -> frozenset[str] | None:
+        """Хосты окна; None — весь проект."""
+        return self.scope_of(self.window)
 
     @property
     def blocked_hosts(self) -> set[str] | None:
         """Хосты, закрытые блэкаутом; None — закрыт весь проект."""
         out: set[str] = set()
         for b in self.blackouts:
-            if not b.hosts:
+            sc = self.scope_of(b)
+            if sc is None:
                 return None
-            out |= set(b.hosts)
+            out |= sc
         return out
 
     @property
@@ -182,10 +215,12 @@ class Occurrence:
         blocked = self.blocked_hosts
         if blocked is None:
             return True
-        return bool(self.window.hosts) and set(self.window.hosts) <= blocked
+        scope = self.scope
+        return scope is not None and bool(scope) and scope <= blocked
 
     def host_allowed(self, host: str) -> bool:
-        if self.window.hosts and host not in self.window.hosts:
+        scope = self.scope
+        if scope is not None and host not in scope:
             return False
         blocked = self.blocked_hosts
         return blocked is not None and host not in blocked
@@ -212,26 +247,36 @@ def project_windows(db: Session, project_id: str, *, active_only: bool = True) -
 
 
 def occurrences(
-    windows: list[MaintenanceWindow], start: datetime, end: datetime, *, include_blackouts: bool = False
+    windows: list[MaintenanceWindow],
+    start: datetime,
+    end: datetime,
+    *,
+    include_blackouts: bool = False,
+    scopes: dict[int, frozenset[str] | None] | None = None,
 ) -> list[Occurrence]:
-    """Даты рабочих окон в [start, end) с блэкаутами, которые их задевают, по времени начала."""
+    """Даты рабочих окон в [start, end) с блэкаутами, которые их задевают, по времени начала.
+
+    scopes — охват окон с группами (scopes_for); без него охват — только список хостов."""
+    scopes = scopes or {}
     blackouts = [b for b in windows if b.kind == "blackout" and b.is_active]
     out: list[Occurrence] = []
     for w in windows:
         if w.kind == "blackout":
             if include_blackouts:
-                out += [Occurrence(w, s, e) for s, e in intervals(w, start, end)]
+                out += [Occurrence(w, s, e, scopes=scopes) for s, e in intervals(w, start, end)]
             continue
         for s, e in intervals(w, start, end):
             # Блэкаут ищем по самой дате окна: она может выходить за [start, end).
-            out.append(Occurrence(w, s, e, [b for b in blackouts if intervals(b, s, e)]))
+            out.append(Occurrence(w, s, e, [b for b in blackouts if intervals(b, s, e)], scopes))
     out.sort(key=lambda o: (o.start, o.window.id))
     return out
 
 
 def window_occurrences(db: Session, w: MaintenanceWindow, start: datetime, end: datetime) -> list[Occurrence]:
+    if w.kind == "blackout":
+        return []
     blackouts = [b for b in project_windows(db, w.project_id) if b.kind == "blackout" and b.id != w.id]
-    return occurrences([w, *blackouts], start, end) if w.kind != "blackout" else []
+    return occurrences([w, *blackouts], start, end, scopes=scopes_for(db, [w, *blackouts]))
 
 
 def next_occurrence(
@@ -294,7 +339,7 @@ def plan(db: Session, occ: Occurrence) -> dict:
         for h in hosts:
             if h in in_scope:
                 continue
-            if occ.window.hosts and h not in occ.window.hosts:
+            if occ.scope is not None and h not in occ.scope:
                 skipped.append({"host": h, "reason": "не входит в окно"})
             else:
                 skipped.append({"host": h, "reason": "блэкаут"})
@@ -369,6 +414,7 @@ def window_out(db: Session, w: MaintenanceWindow, now: datetime, counts: dict[in
         "valid_from": w.valid_from,
         "valid_until": w.valid_until,
         "hosts": w.hosts or [],
+        "groups": w.groups or [],
         "note": w.note,
         "is_active": w.is_active,
         "schedule": schedule_text(w),
@@ -409,7 +455,8 @@ def place(db: Session, t: Ticket, actor: Actor, w: MaintenanceWindow | None, *, 
         if nxt is None:
             raise WorkflowError(f"У окна «{w.name}» нет предстоящих дат")
         hosts = [h.host for h in t.hosts if h.status != "confirmed"]
-        if w.hosts and not set(hosts) & set(w.hosts):
+        scope = nxt.scope
+        if scope is not None and not set(hosts) & scope:
             raise WorkflowError(f"Ни один хост заявки не входит в окно «{w.name}»")
     if t.window_id == (w.id if w else None):
         return False

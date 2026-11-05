@@ -10,9 +10,11 @@ import {
   Menu,
   Moon,
   PlugZap,
+  Server,
   Sun,
   UserCheck,
   Users,
+  Workflow,
   Wrench,
 } from "lucide-react";
 import { useAuth, type Perm } from "../auth/AuthContext";
@@ -37,6 +39,8 @@ const NAV: NavItem[] = [
   { to: "/tickets", label: "Заявки", icon: <ClipboardList size={18} />, perm: "view" },
   { to: "/my", label: "Мои задачи", icon: <UserCheck size={18} />, perm: "ticket_work" },
   { to: "/windows", label: "Окна и план", icon: <CalendarClock size={18} />, perm: "view" },
+  { to: "/assets", label: "Активы", icon: <Server size={18} />, perm: "view" },
+  { to: "/rules", label: "Правила назначения", icon: <Workflow size={18} />, perm: "rules_manage" },
   { to: "/admin/users", label: "Пользователи и роли", icon: <Users size={18} />, perm: "users_manage", admin: true },
   { to: "/admin/projects", label: "Проекты", icon: <FolderKanban size={18} />, perm: "projects_manage", admin: true },
   { to: "/admin/sources", label: "Источники", icon: <PlugZap size={18} />, perm: "sources_manage", admin: true },

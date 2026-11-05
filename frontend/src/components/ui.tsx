@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Check, Copy, Inbox, X } from "lucide-react";
-import type { HostStatus, Severity, TicketStatus } from "../api/types";
-import { HOST_STATUS_LABEL, HOST_STATUS_PILL, SEVERITY_LABEL, SEVERITY_SHORT, STATUS_LABEL, STATUS_PILL } from "../lib/labels";
+import type { Criticality, HostStatus, Severity, TicketStatus } from "../api/types";
+import { CRITICALITY_LABEL, HOST_STATUS_LABEL, HOST_STATUS_PILL, SEVERITY_LABEL, SEVERITY_SHORT, STATUS_LABEL, STATUS_PILL } from "../lib/labels";
 import { bduUrl, cveUrl } from "../lib/refs";
 
 export function SeverityBadge({ severity, short }: { severity: Severity; short?: boolean }) {
@@ -9,6 +9,16 @@ export function SeverityBadge({ severity, short }: { severity: Severity; short?:
     <span className={`sev sev-${severity}`}>
       <i aria-hidden="true" />
       {short ? SEVERITY_SHORT[severity] : SEVERITY_LABEL[severity]}
+    </span>
+  );
+}
+
+/** Критичность актива — как в «Сканере»: те же цвета, что у уровней. */
+export function CriticalityBadge({ value }: { value: Criticality }) {
+  return (
+    <span className={`sev sev-${value}`}>
+      <i aria-hidden="true" />
+      {CRITICALITY_LABEL[value]}
     </span>
   );
 }

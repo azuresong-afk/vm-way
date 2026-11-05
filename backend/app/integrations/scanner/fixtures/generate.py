@@ -71,6 +71,25 @@ DEB = [n for _, n, o in HOSTS if o == "debian"]
 AST = [n for _, n, o in HOSTS if o == "astra"]
 RED = [n for _, n, o in HOSTS if o == "redos"]
 
+# Активы и группы активов «Сканера» (AssetOut, AssetGroupOut): владелец, критичность, теги, группы.
+# Группа «Резерв» пустая; srv-06 — без группы и владельца (правила по группе его не берут).
+ASSET_GROUPS = ["DMZ", "Серверы приложений", "Базы данных", "АРМ сотрудников", "Инфраструктура", "Резерв"]
+_G = {name: i + 1 for i, name in enumerate(ASSET_GROUPS)}
+OS_FAMILY_LABEL = {"debian": "Debian", "astra": "Astra Linux", "redos": "РЕД ОС"}
+ASSET_META = {
+    **{n: (["DMZ"], "Отдел веб-сервисов", "high", ["prod", "internet"]) for n in DEB[:4]},
+    "app-01": (["Серверы приложений"], "Отдел веб-сервисов", "high", ["prod"]),
+    "app-02": (["Серверы приложений"], "Отдел веб-сервисов", "high", ["prod"]),
+    "db-01": (["Базы данных"], "Группа СУБД", "critical", ["prod", "pdn"]),
+    "mon-01": (["Инфраструктура"], "Отдел эксплуатации", "medium", []),
+    **{n: (["АРМ сотрудников"], "Служба поддержки", "low", ["arm"]) for n in AST[:4]},
+    "fs-01": (["Инфраструктура"], "Отдел эксплуатации", "critical", ["prod"]),
+    "dc-01": (["Инфраструктура"], "Отдел эксплуатации", "critical", ["prod"]),
+    "srv-01": (["Серверы приложений", "Базы данных"], "Группа СУБД", "high", ["prod", "pdn"]),
+    **{n: (["Серверы приложений"], "Отдел эксплуатации", "medium", ["prod"]) for n in RED[1:5]},
+    "srv-06": ([], None, "low", []),
+}
+
 # Действия исправления. hosts — по прогонам (100, 101, 102).
 # vulns: (CVE, БДУ, CVSS, заголовок). Уровень — по CVSS, как в «Сканере».
 ACTIONS = [
@@ -663,7 +682,51 @@ def build_run(run: dict) -> dict:
     return {"run": meta, "findings": findings, "fixes": fixes, "coverage_entries": entries}
 
 
+def build_assets() -> tuple[list[dict], list[dict]]:
+    eid = ENGAGEMENT["id"]
+    created = "2026-08-20T09:10:00Z"
+    assets = []
+    for i, (addr, name, o) in enumerate(HOSTS):
+        groups, owner, crit, tags = ASSET_META[name]
+        assets.append(
+            {
+                "id": 501 + i,
+                "engagement_id": eid,
+                "address": addr,
+                "hostname": name,
+                "owner": owner,
+                "criticality": crit,
+                "notes": None,
+                "tags": sorted(tags),
+                "groups": [{"id": _G[g], "name": g} for g in sorted(groups)],
+                "created_at": created,
+                "os_guess": OS[o]["os_guess"],
+                "os_family": OS[o]["family"],
+                "os_family_label": OS_FAMILY_LABEL[o],
+                "last_run_id": RUNS[-1]["id"],
+                "finding_counts": {},
+                "findings_total": 0,
+                "checked_run_id": RUNS[-1]["id"],
+                "source": "discovered",
+                "first_seen_at": RUNS[0]["started_at"],
+                "last_seen_at": RUNS[-1]["started_at"],
+            }
+        )
+    groups = [
+        {
+            "id": _G[g],
+            "engagement_id": eid,
+            "name": g,
+            "asset_count": sum(1 for a in assets if any(x["name"] == g for x in a["groups"])),
+            "created_at": created,
+        }
+        for g in sorted(ASSET_GROUPS)
+    ]
+    return assets, groups
+
+
 def build() -> dict:
+    assets, groups = build_assets()
     return {
         "me": {
             "id": 99,
@@ -691,6 +754,8 @@ def build() -> dict:
             {"address": a, "hostname": n, "os_guess": OS[o]["os_guess"], "os_family": OS[o]["family"]}
             for a, n, o in HOSTS
         ],
+        "assets": {str(ENGAGEMENT["id"]): assets},
+        "asset_groups": {str(ENGAGEMENT["id"]): groups},
         "runs": [build_run(r) for r in RUNS],
         "world": WORLD,
     }

@@ -35,6 +35,11 @@ def test_contract_reads(raw):
         sc.EngagementOut.model_validate(e)
     for a in raw.get("/engagements/7/allowlist").json():
         sc.AllowlistOut.model_validate(a)
+    assets = [sc.AssetOut.model_validate(a) for a in raw.get("/engagements/7/assets").json()]
+    assert len(assets) == 20 and all(a.criticality in sc.CRITICALITY for a in assets)
+    groups = [sc.AssetGroupOut.model_validate(g) for g in raw.get("/engagements/7/asset-groups").json()]
+    assert {g.name for g in groups} >= {"DMZ", "Резерв"}
+    assert next(g for g in groups if g.name == "Резерв").asset_count == 0
     runs = raw.get("/engagements/7/runs").json()
     assert [r["id"] for r in runs] == [102, 101, 100]
     for r in runs:
