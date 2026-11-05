@@ -297,6 +297,21 @@ def is_open(db: Session, w: MaintenanceWindow, host: str, at: datetime) -> bool:
     return any(o.start <= at < o.end and o.host_allowed(host) for o in window_occurrences(db, w, at, at))
 
 
+def blackout_at(db: Session, project_id: str, host: str, at: datetime) -> MaintenanceWindow | None:
+    """Блэкаут, который сейчас закрывает хост (для раскаток, задача 2.4), или None."""
+    blackouts = [b for b in project_windows(db, project_id) if b.kind == "blackout"]
+    if not blackouts:
+        return None
+    at = as_utc(at)
+    scopes = scopes_for(db, blackouts)
+    for b in blackouts:
+        if intervals(b, at, at + timedelta(seconds=1)):
+            scope = scopes.get(b.id)
+            if scope is None or host in scope:
+                return b
+    return None
+
+
 def estimate_minutes(kind: str, hosts: int, reboot: bool) -> int:
     """Оценка длительности раскатки: канарейка (1 хост), затем партии по 10 %."""
     if hosts <= 0:

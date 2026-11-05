@@ -1,4 +1,4 @@
-import type { Criticality, HostStatus, Severity, TicketStatus } from "../api/types";
+import type { Criticality, HostStatus, RolloutHostStatus, RolloutStatus, Severity, StageState, TicketStatus } from "../api/types";
 
 export const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];
 
@@ -153,6 +153,18 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "window.update": "Окно изменено",
   "window.delete": "Окно удалено",
   "audit.export": "Выгрузка журнала",
+  "rollout.create": "Раскатка подготовлена",
+  "rollout.dry_run": "Пробный прогон",
+  "rollout.dry_run_result": "Итог пробного прогона",
+  "rollout.approve": "Раскатка утверждена",
+  "rollout.reject": "Раскатка отклонена",
+  "rollout.cancel": "Раскатка отменена",
+  "rollout.start": "Раскатка запущена",
+  "rollout.denied": "Хосты не допущены",
+  "rollout.host": "Раскатка на хосте",
+  "rollout.stop": "Аварийный стоп",
+  "rollout.finish": "Раскатка завершена",
+  "rollout.settings": "Параллельность раскаток",
   "demo.seed": "Демо-данные",
 };
 
@@ -165,6 +177,9 @@ export const PERM_LABEL: Record<string, string> = {
   ticket_override: "переопределение уровня",
   verify: "повторная проверка",
   windows_manage: "окна обслуживания",
+  rules_manage: "правила назначения",
+  credentials_manage: "SSH-учётки",
+  rollout_approve: "утверждение раскаток",
   projects_manage: "проекты",
   sources_manage: "источники",
   users_manage: "пользователи",
@@ -183,4 +198,39 @@ export const CRITICALITY_LABEL: Record<Criticality, string> = {
   high: "Высокая",
   medium: "Средняя",
   low: "Низкая",
+};
+
+// --- Раскатки (задача 2.4) ---
+
+export const ROLLOUT_STATUS_PILL: Record<RolloutStatus, string> = {
+  draft: "pill-muted",
+  dry_run: "pill-info pill-running",
+  pending_approval: "pill-warn",
+  approved: "pill-info",
+  running: "pill-info pill-running",
+  done: "pill-ok",
+  failed: "pill-danger",
+  stopped: "pill-danger",
+  rejected: "pill-muted",
+  cancelled: "pill-muted",
+};
+
+export const ROLLOUT_HOST_PILL: Record<RolloutHostStatus, string> = {
+  pending: "pill-muted",
+  dry_ok: "pill-ok",
+  dry_failed: "pill-danger",
+  queued: "pill-muted",
+  running: "pill-info pill-running",
+  succeeded: "pill-ok",
+  reboot_pending: "pill-warn",
+  failed: "pill-danger",
+  skipped: "pill-muted",
+};
+
+export const STAGE_LABEL: Record<StageState, string> = {
+  pending: "впереди",
+  running: "идёт",
+  done: "готово",
+  failed: "ошибка",
+  skipped: "пропущено",
 };

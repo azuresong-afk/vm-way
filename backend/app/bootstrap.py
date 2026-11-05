@@ -161,11 +161,15 @@ def ensure_demo(db: Session) -> Project | None:
 
 def _demo_ssh(db: Session, project_id: str) -> None:
     """SSH-учётки и ключи хостов (задача 2.3): пароль для серверов и ключ для БД; ключи трёх
-    хостов закреплены, у web-03 ключ «изменился». Хостов демо в сети нет — проверка входа на демо-стенде
-    честно покажет «недоступен»; ключи сгенерированы здесь же."""
+    хостов закреплены, у web-03 ключ «изменился». Хосты демо — поддельные SSH-серверы демо-стенда
+    (app/integrations/sshsim.py, задача 2.4): закреплены их настоящие ключи, у web-03 закреплён
+    «старый» ключ, а стенд предъявляет новый."""
     import asyncssh
 
+    from app.integrations import sshsim
     from app.services import credentials
+
+    sim = sshsim.demo()
 
     now = utcnow()
     servers = SshCredential(
@@ -203,7 +207,7 @@ def _demo_ssh(db: Session, project_id: str) -> None:
         return k.get_algorithm(), k.get_fingerprint("sha256"), " ".join(k.export_public_key().decode().split()[:2])
 
     for host in ("10.20.1.11", "10.20.1.12", "10.20.1.15", "10.20.1.13"):
-        kt, fp, pub = _pub()
+        kt, fp, pub = sim.public_key(host) if sim and host != "10.20.1.13" else _pub()
         hk = HostKey(
             project_id=project_id,
             host=host,
@@ -215,7 +219,7 @@ def _demo_ssh(db: Session, project_id: str) -> None:
             last_seen_at=now,
         )
         if host == "10.20.1.13":
-            kt2, fp2, pub2 = _pub()
+            kt2, fp2, pub2 = sim.public_key(host) if sim else _pub()
             hk.status, hk.mismatch_key_type, hk.mismatch_fingerprint, hk.mismatch_public_key = (
                 "mismatch",
                 kt2,

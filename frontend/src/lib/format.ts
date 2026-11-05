@@ -122,3 +122,12 @@ export function fmtEta(sec: number): string {
 export function safeNext(v: string | null): string {
   return v && v.startsWith("/") && !v.startsWith("//") && !v.startsWith("/\\") ? v : "/";
 }
+
+/** Длительность команды или хоста: «850 мс», «12 с», «3 мин 5 с». */
+export function fmtMs(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return "—";
+  if (ms < 1000) return `${ms} мс`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} с`;
+  return `${Math.floor(s / 60)} мин ${s % 60} с`;
+}

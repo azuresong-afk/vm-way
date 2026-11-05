@@ -18,6 +18,8 @@ os.environ["VM_JOBS_INLINE"] = "1"
 os.environ["VM_POLL_ENABLED"] = "0"
 os.environ["VM_VERIFY_POLL_SECONDS"] = "0"
 os.environ["VM_ALLOW_MOCK_SOURCES"] = "1"
+os.environ["VM_ROLLOUT_RECONNECT_SECONDS"] = "0.05"
+os.environ["VM_ROLLOUT_REBOOT_TIMEOUT_SECONDS"] = "3"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

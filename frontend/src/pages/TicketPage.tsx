@@ -12,6 +12,7 @@ import {
   MODULE_LABEL,
   OUTCOME_LABEL,
   OUTCOME_PILL,
+  ROLLOUT_STATUS_PILL,
   SEVERITY_LABEL,
   STATUS_LABEL,
 } from "../lib/labels";
@@ -309,6 +310,30 @@ const V_STATUS: Record<VerificationOut["status"], [string, string]> = {
   failed: ["Ошибка", "pill-danger"],
 };
 
+function Rollouts({ t }: { t: TicketDetail }) {
+  if (!t.rollouts.length) return null;
+  return (
+    <section className="card card-pad stack" aria-labelledby="rollouts-head">
+      <h2 id="rollouts-head">Раскатки</h2>
+      <div>
+        {t.rollouts.map((r) => (
+          <div key={r.id} className="list-row">
+            <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+              <Link to={`/rollouts/${r.id}`}>
+                №{r.id} {r.title}
+              </Link>
+              <span className="faint" style={{ fontSize: 12.5 }}>
+                {fmtNumber(r.hosts)} {plural(r.hosts, ["хост", "хоста", "хостов"])} · {fmtDate(r.created_at)}
+              </span>
+            </span>
+            <span className={`pill ${ROLLOUT_STATUS_PILL[r.status]}`}>{r.status_label}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Checks({ t }: { t: TicketDetail }) {
   if (!t.verifications.length) return null;
   return (
@@ -373,6 +398,24 @@ function historyText(h: HistoryEntry): string {
       return `Запущена повторная проверка: ${h.to}`;
     case "verify_result":
       return `Итог повторной проверки: ${OUTCOME_LABEL[h.to] ?? h.to}`;
+    case "rollout_created":
+      return `Подготовлена раскатка №${String(d.rollout_id)}`;
+    case "rollout_dry_run":
+      return `Пробный прогон раскатки №${String(d.rollout_id)}`;
+    case "rollout_dry_run_result":
+      return `Пробный прогон раскатки №${String(d.rollout_id)}: ${h.to}`;
+    case "rollout_approved":
+      return `Раскатка №${String(d.rollout_id)} утверждена${d.allow_reboot ? ", перезагрузка разрешена" : ""}${d.outside_window ? ", вне окна" : ""}`;
+    case "rollout_rejected":
+      return `Раскатка №${String(d.rollout_id)} отклонена${why}`;
+    case "rollout_cancelled":
+      return `Раскатка №${String(d.rollout_id)} отменена${why}`;
+    case "rollout_started":
+      return `Раскатка №${String(d.rollout_id)} запущена: ${h.to}`;
+    case "rollout_stop":
+      return `Аварийный стоп раскатки №${String(d.rollout_id)}${why}`;
+    case "rollout_finished":
+      return `Раскатка №${String(d.rollout_id)} завершена`;
     default:
       return `${h.action}${h.to ? `: ${h.to}` : ""}`;
   }
@@ -507,6 +550,7 @@ export function TicketPage() {
         </div>
         <div className="grow-2 stack" style={{ gap: "var(--s3)" }}>
           <Facts t={d} />
+          <Rollouts t={d} />
           <Checks t={d} />
           <Activity t={d} onChanged={() => void t.reload()} />
         </div>

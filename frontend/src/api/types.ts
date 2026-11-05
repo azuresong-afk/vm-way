@@ -25,6 +25,7 @@ export type Perm =
   | "windows_manage"
   | "rules_manage"
   | "credentials_manage"
+  | "rollout_approve"
   | "projects_manage"
   | "sources_manage"
   | "users_manage"
@@ -215,6 +216,7 @@ export interface TicketCan {
   comment: boolean;
   verify: boolean;
   window: boolean;
+  rollout: boolean;
 }
 
 export interface TicketDetail extends TicketBrief {
@@ -227,6 +229,7 @@ export interface TicketDetail extends TicketBrief {
   watchers: UserRef[];
   watching: boolean;
   verifications: VerificationOut[];
+  rollouts: TicketRolloutBrief[];
   can: TicketCan;
 }
 
@@ -779,4 +782,191 @@ export interface SshCheckOut {
   facts: { user?: string; uid?: number; os?: string; become?: "root" | "sudo" | "none" | "failed" };
   key_state: "new" | "pinned" | "mismatch";
   host_key: HostKeyOut | null;
+}
+
+// --- Раскатки (задача 2.4) ---
+
+export type RolloutTemplate = "package" | "kernel" | "service" | "custom";
+export type RolloutStatus =
+  | "draft"
+  | "dry_run"
+  | "pending_approval"
+  | "approved"
+  | "running"
+  | "done"
+  | "failed"
+  | "stopped"
+  | "rejected"
+  | "cancelled";
+export type RolloutHostStatus =
+  | "pending"
+  | "dry_ok"
+  | "dry_failed"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "reboot_pending"
+  | "failed"
+  | "skipped";
+export type StageState = "pending" | "running" | "done" | "failed" | "skipped";
+
+export interface TicketRolloutBrief {
+  id: number;
+  title: string;
+  status: RolloutStatus;
+  status_label: string;
+  hosts: number;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface RolloutCan {
+  dry_run: boolean;
+  approve: boolean;
+  reject: boolean;
+  start: boolean;
+  stop: boolean;
+  cancel: boolean;
+}
+
+export interface RolloutPlanItem {
+  package: string;
+  from: string;
+  to: string;
+}
+
+export interface RolloutHostOut {
+  id: number;
+  host: string;
+  stage: number | null;
+  status: RolloutHostStatus;
+  status_label: string;
+  reason: string;
+  credential: { id: number | null; name: string } | null;
+  dry_status: "" | "ok" | "failed";
+  dry_plan: RolloutPlanItem[];
+  dry_note: string;
+  versions_before: Record<string, string | null>;
+  versions_after: Record<string, string | null>;
+  rollback: string[];
+  reboot_required: boolean;
+  rebooted: boolean;
+  kernel_before: string;
+  kernel_after: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  canary: boolean;
+}
+
+export interface RolloutStage {
+  key: "dry_run" | "approval" | "canary" | "batches" | "verify";
+  label: string;
+  state: StageState;
+  hosts?: string[];
+  batches?: { stage: number; hosts: string[]; state: StageState }[];
+}
+
+export interface RolloutOut {
+  id: number;
+  project_id: string;
+  ticket: { id: number; title: string; status: TicketStatus; os: string } | null;
+  title: string;
+  template: RolloutTemplate;
+  template_label: string;
+  manager: string;
+  packages: string[];
+  fixed_version: string;
+  service: string;
+  command: string;
+  window: { id: number; name: string } | null;
+  canary_host: string;
+  batch_percent: number;
+  failure_threshold: number;
+  status: RolloutStatus;
+  status_label: string;
+  error: string;
+  note: string;
+  prepared_by: UserRef | null;
+  dry_run_at: string | null;
+  dry_run_by: UserRef | null;
+  decided_by: UserRef | null;
+  decided_at: string | null;
+  decision_note: string;
+  allow_reboot: boolean;
+  outside_window: boolean;
+  outside_window_reason: string;
+  custom_approved: boolean;
+  started_by: UserRef | null;
+  started_at: string | null;
+  finished_at: string | null;
+  stop_requested: boolean;
+  stopped_by: UserRef | null;
+  stop_reason: string;
+  verification_ids: number[];
+  counts: Partial<Record<RolloutHostStatus, number>>;
+  hosts_total: number;
+  created_at: string;
+  updated_at: string;
+  can?: RolloutCan;
+  hosts?: RolloutHostOut[];
+  stages?: RolloutStage[];
+  step_counts?: Record<string, number>;
+  verifications?: VerificationOut[];
+}
+
+export interface RolloutStepOut {
+  id: number;
+  host_id: number;
+  phase: "dry_run" | "execute";
+  label: string;
+  command: string;
+  returncode: number | null;
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  duration_ms: number;
+  at: string;
+}
+
+export interface RolloutDraft {
+  template: RolloutTemplate;
+  manager: string;
+  packages: string[];
+  fixed_version: string;
+  service: string;
+  hosts: string[];
+  canary_host: string;
+  window_id: number | null;
+  batch_percent: number;
+  failure_threshold: number;
+  reboot: boolean;
+  windows: { id: number; name: string }[];
+  active_rollout_id: number | null;
+  can_prepare: boolean;
+  can_custom: boolean;
+  problems: string[];
+}
+
+export interface RolloutIn {
+  template: RolloutTemplate;
+  manager?: string;
+  packages?: string[];
+  fixed_version?: string;
+  service?: string;
+  command?: string;
+  hosts?: string[];
+  canary_host?: string;
+  window_id?: number | null;
+  batch_percent?: number;
+  failure_threshold?: number;
+  note?: string;
+}
+
+export interface RolloutMeta {
+  templates: { id: RolloutTemplate; label: string }[];
+  managers: { id: string; label: string }[];
+  statuses: { id: RolloutStatus; label: string }[];
+  host_statuses: { id: RolloutHostStatus; label: string }[];
+  name_pattern: string;
 }

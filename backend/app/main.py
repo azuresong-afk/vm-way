@@ -13,6 +13,7 @@ from app.api import (
     credentials,
     meta,
     projects,
+    rollouts,
     rules,
     sources,
     summary,
@@ -33,6 +34,11 @@ async def lifespan(_: FastAPI):
     if not get_settings().secret_key:
         raise RuntimeError("VM_SECRET_KEY не задан")
     s = get_settings()
+    if s.demo:
+        # Демо-стенд SSH: поддельные хосты фикстуры для раскаток (app/integrations/sshsim.py).
+        from app.integrations import sshsim
+
+        sshsim.start_demo(s.secret_key)
     with SessionLocal() as db:
         bootstrap.ensure_admin(db)
         bootstrap.ensure_demo(db)
@@ -64,6 +70,7 @@ def create_app() -> FastAPI:
         assets.router,
         rules.router,
         credentials.router,
+        rollouts.router,
         summary.router,
         audit_log.router,
     ):

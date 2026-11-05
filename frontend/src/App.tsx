@@ -9,6 +9,8 @@ import { AccessPage } from "./pages/AccessPage";
 import { AssetsPage } from "./pages/AssetsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MyTasksPage } from "./pages/MyTasksPage";
+import { RolloutPage } from "./pages/RolloutPage";
+import { RolloutsPage } from "./pages/RolloutsPage";
 import { RulesPage } from "./pages/RulesPage";
 import { SummaryPage } from "./pages/SummaryPage";
 import { TicketPage } from "./pages/TicketPage";
@@ -112,6 +114,8 @@ export function App() {
         <Route path="tickets/:id" element={<RequirePerm perm="view"><TicketPage /></RequirePerm>} />
         <Route path="my" element={work("ticket_work", <MyTasksPage />)} />
         <Route path="windows" element={work("view", <WindowsPage />)} />
+        <Route path="rollouts" element={work("view", <RolloutsPage />)} />
+        <Route path="rollouts/:id" element={<RequirePerm perm="view"><RolloutPage /></RequirePerm>} />
         <Route path="assets" element={work("view", <AssetsPage />)} />
         <Route path="rules" element={work("view", <RulesPage />)} />
         <Route path="access" element={work("view", <AccessPage />)} />

@@ -51,6 +51,11 @@ import type {
   WindowIn,
   WindowOut,
   WindowPlanOut,
+  RolloutDraft,
+  RolloutIn,
+  RolloutMeta,
+  RolloutOut,
+  RolloutStepOut,
 } from "./types";
 
 export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
@@ -248,6 +253,28 @@ export const api = {
   sshHosts: (projectId: string) => json<SshHostOut[]>(`/projects/${enc(projectId)}/ssh-hosts`),
   acceptHostKey: (id: number, reason: string) => json<HostKeyOut>(`/host-keys/${id}/accept`, post({ reason })),
   resetHostKey: (id: number, reason: string) => json<void>(`/host-keys/${id}/reset`, post({ reason })),
+  rolloutMeta: () => json<RolloutMeta>("/rollout-meta"),
+  rolloutDraft: (ticketId: number) => json<RolloutDraft>(`/tickets/${ticketId}/rollout-draft`),
+  createRollout: (ticketId: number, data: RolloutIn) => json<RolloutOut>(`/tickets/${ticketId}/rollouts`, post(data)),
+  rollouts: (projectId: string, query: { status?: string[]; active?: boolean; ticket_id?: number; limit?: number; offset?: number }) =>
+    page<RolloutOut>(`/projects/${enc(projectId)}/rollouts${listQuery(query)}`),
+  rollout: (id: number) => json<RolloutOut>(`/rollouts/${id}`),
+  rolloutSteps: (id: number, hostId: number) => json<RolloutStepOut[]>(`/rollouts/${id}/steps?host_id=${hostId}`),
+  rolloutDryRun: (id: number) => json<RolloutOut>(`/rollouts/${id}/dry-run`, post()),
+  rolloutApprove: (
+    id: number,
+    data: { allow_reboot: boolean; outside_window: boolean; outside_window_reason: string; custom_ack: boolean; note: string },
+  ) => json<RolloutOut>(`/rollouts/${id}/approve`, post(data)),
+  rolloutReject: (id: number, reason: string) => json<RolloutOut>(`/rollouts/${id}/reject`, post({ reason })),
+  rolloutStart: (id: number) => json<RolloutOut>(`/rollouts/${id}/start`, post()),
+  rolloutStop: (id: number, reason: string) => json<RolloutOut>(`/rollouts/${id}/stop`, post({ reason })),
+  rolloutCancel: (id: number, reason: string) => json<RolloutOut>(`/rollouts/${id}/cancel`, post({ reason })),
+  rolloutSettings: (projectId: string) => json<{ rollout_parallelism: number }>(`/projects/${enc(projectId)}/rollout-settings`),
+  setRolloutSettings: (projectId: string, parallelism: number) =>
+    json<{ rollout_parallelism: number }>(`/projects/${enc(projectId)}/rollout-settings`, {
+      method: "PUT",
+      ...body({ rollout_parallelism: parallelism }),
+    }),
   teams: () => json<TeamOut[]>("/teams"),
   createTeam: (data: { name: string; member_ids: number[] }) => json<TeamOut>("/teams", post(data)),
   updateTeam: (id: number, data: { name?: string; member_ids?: number[] }) =>

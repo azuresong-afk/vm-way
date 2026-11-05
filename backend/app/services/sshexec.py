@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import shlex
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import asyncssh
@@ -35,6 +36,10 @@ AUTH_FAILED = "auth_failed"
 HOST_KEY_MISMATCH = "host_key_mismatch"
 BECOME_FAILED = "become_failed"
 ERROR = "error"
+
+# Куда на самом деле подключаться: (адрес, порт) → (адрес, порт). Подменяет только демо-стенд
+# (app/integrations/sshsim.py, VM_DEMO=1) и тесты; в рабочем режиме — None.
+route: Callable[[str, int], tuple[str, int]] | None = None
 
 RESULT_LABELS = {
     OK: "Вход выполнен",
@@ -174,8 +179,12 @@ async def connect(
             "password": login.password or "",
             "preferred_auth": "keyboard-interactive,password",
         }
+    if route is not None:
+        addr, opts["port"] = route(host, port)
+    else:
+        addr = host
     try:
-        conn = await asyncssh.connect(host, **opts)
+        conn = await asyncssh.connect(addr, **opts)
     except asyncssh.HostKeyNotVerifiable:
         raise SshFailure(
             HOST_KEY_MISMATCH,

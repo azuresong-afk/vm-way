@@ -932,3 +932,41 @@ a.kpi-mini:hover { color: var(--accent-text); text-decoration: none; }
 .team-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--border); }
 .team-row:first-child { border-top: 0; }
 .team-members { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* Раскатки (задача 2.4): этапы, хосты, журнал команд */
+.stepper { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s2); }
+.step { position: relative; display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.step + .step::before { content: ""; position: absolute; left: calc(-1 * var(--s2)); top: 13px; width: var(--s2); height: 1px; background: var(--border-strong); }
+.step-dot { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-3); }
+.step-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 12.5px; }
+.step-text b { font-size: 13px; font-weight: 600; color: var(--text); }
+.step-done .step-dot { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); }
+.step-running .step-dot { background: var(--info-soft); border-color: var(--accent); color: var(--accent-text); }
+.step-failed .step-dot { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.step-skipped .step-dot { color: var(--text-3); border-style: dashed; }
+.step-batches { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.batch { display: inline-block; width: 14px; height: 6px; border-radius: var(--radius-sm); background: var(--surface-3); }
+.batch-done { background: var(--ok); }
+.batch-running { background: var(--accent); animation: pulse 1.2s infinite ease-in-out; }
+.batch-failed { background: var(--danger); }
+.batch-skipped { background: var(--muted-soft); }
+.spin { animation: spin 1s linear infinite; }
+@media (max-width: 760px) {
+  .stepper { grid-template-columns: 1fr; gap: var(--s1); }
+  .step + .step::before { display: none; }
+}
+.versions { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.row-click { cursor: pointer; }
+.row-click:hover { background: var(--surface-2); }
+.row-detail > td { background: var(--surface-2); padding: var(--s2); }
+.host-log { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.log-step { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.log-step.is-bad { border-color: var(--danger); }
+.log-step > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 6px 10px; cursor: pointer; font-size: 12.5px; }
+.log-step > summary b { font-weight: 600; }
+.log-phase { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); }
+.log-cmd { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--text-2); font-size: 12px; }
+.log-meta { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.log-step.is-bad .log-meta { color: var(--danger); }
+.log-out { margin: 0; padding: 8px 10px; border-top: 1px solid var(--border); font-size: 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-err { color: var(--danger); }

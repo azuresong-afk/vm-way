@@ -12,6 +12,7 @@ from app.models import (
     AssetGroup,
     AssetGroupMember,
     Comment,
+    Rollout,
     ScanRun,
     Ticket,
     TicketHistory,
@@ -23,6 +24,7 @@ from app.models import (
 )
 from app.rbac import Perm
 from app.services.assets import asset_brief
+from app.services.rollouts import label as rollout_label
 from app.services.verification import verification_out
 from app.services.workflow import CLOSED_STATUSES, SEVERITIES, STATUSES, Actor, allowed_targets, watchers
 
@@ -342,6 +344,18 @@ def read_ticket(ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: 
         "watchers": [_user(u) for u in ws],
         "watching": any(u.id == p.user.id for u in ws),
         "verifications": [verification_out(v) for v in checks],
+        "rollouts": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "status": r.status,
+                "status_label": rollout_label(r.status),
+                "hosts": len(r.hosts),
+                "created_at": r.created_at,
+                "finished_at": r.finished_at,
+            }
+            for r in db.scalars(select(Rollout).where(Rollout.ticket_id == t.id).order_by(Rollout.id.desc()).limit(10))
+        ],
         "can": _can(t, p, verifying=any(v.status in ("requested", "running") for v in checks)),
     }
 
@@ -356,6 +370,8 @@ def _can(t: Ticket, p: Principal, verifying: bool = False) -> dict:
         "override": p.can(Perm.TICKET_OVERRIDE),
         "comment": p.can(Perm.TICKET_WORK),
         "verify": p.can(Perm.VERIFY) and not closed and not verifying,
+        # «Подготовить раскатку» (задача 2.4): исполнитель с правом запуска раскаток.
+        "rollout": p.can(Perm.REMEDIATE_EXECUTE) and not closed,
         # Поставить в окно или снять с окна: исполнитель заявки или руководитель.
         "window": not closed
         and (p.can(Perm.TICKET_ASSIGN) or (p.can(Perm.TICKET_WORK) and t.assignee_id == p.user.id)),
