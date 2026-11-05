@@ -10,6 +10,7 @@ from app.api import (
     assets,
     audit_log,
     auth,
+    credentials,
     meta,
     projects,
     rules,
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
         windows.router,
         assets.router,
         rules.router,
+        credentials.router,
         summary.router,
         audit_log.router,
     ):

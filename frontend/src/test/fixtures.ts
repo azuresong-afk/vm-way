@@ -17,7 +17,7 @@ export function me(roles: string[], permissions: MeOut["permissions"]): MeOut {
 }
 
 export const engineer = me(["engineer"], ["view", "import", "ticket_work", "verify"]);
-export const manager = me(["manager"], ["view", "import", "ticket_work", "ticket_assign", "ticket_override", "verify", "windows_manage", "rules_manage", "audit_view"]);
+export const manager = me(["manager"], ["view", "import", "ticket_work", "ticket_assign", "ticket_override", "verify", "windows_manage", "rules_manage", "credentials_manage", "audit_view"]);
 
 export const brief: TicketBrief = {
   id: 5,

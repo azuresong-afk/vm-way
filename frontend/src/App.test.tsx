@@ -370,3 +370,157 @@ describe("правила назначения и активы", () => {
     await waitFor(() => expect(calls.some((c) => c.path.includes("group=DMZ"))).toBe(true));
   });
 });
+
+describe("доступ к хостам", () => {
+  beforeEach(() => setToken("t"));
+
+  const cred = {
+    id: 3,
+    project_id: "p1",
+    name: "Linux-серверы (deploy)",
+    username: "deploy",
+    auth: "password",
+    port: 22,
+    become: "sudo",
+    key_type: "",
+    key_fingerprint: "",
+    has_secret: true,
+    has_become_password: false,
+    hosts: ["10.20.1.0/24"],
+    groups: [],
+    is_active: true,
+    note: "",
+    last_check: null,
+    created_at: "",
+    updated_at: "",
+  };
+  const pinned = {
+    id: 21,
+    host: "10.20.1.11",
+    port: 22,
+    key_type: "ssh-ed25519",
+    fingerprint: "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    status: "pinned",
+    pinned_via: "tofu",
+    pinned_by: null,
+    pinned_at: "2026-11-05T10:00:00Z",
+    last_seen_at: "2026-11-05T10:00:00Z",
+    mismatch: null,
+  };
+  const changed = {
+    ...pinned,
+    id: 22,
+    host: "10.20.1.13",
+    status: "mismatch",
+    mismatch: { key_type: "ssh-ed25519", fingerprint: "SHA256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", at: "2026-11-05T11:00:00Z", count: 1 },
+  };
+  const via = { id: 3, name: cred.name, username: "deploy", port: 22, why: "subnet", detail: "10.20.1.0/24" };
+  const hosts = [
+    { host: "10.20.1.11", hostname: "web-01", groups: ["DMZ"], in_project: true, credential: via, keys: [pinned] },
+    { host: "10.20.1.13", hostname: "web-03", groups: ["DMZ"], in_project: true, credential: via, keys: [changed] },
+    { host: "10.20.2.21", hostname: "arm-01", groups: [], in_project: true, credential: null, keys: [] },
+  ];
+
+  it("руководитель заводит учётку: секреты уходят только в запросе создания", async () => {
+    const calls = mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/ssh-credentials": [],
+      "/projects/p1/ssh-hosts": [],
+      "/projects/p1/asset-facets": { groups: [{ name: "DMZ", assets: 4 }], tags: [], owners: [], criticality: [] },
+      "POST /projects/p1/ssh-credentials": cred,
+    });
+    renderAt("/access");
+    expect(await screen.findByRole("heading", { name: "Доступ к хостам" })).toBeInTheDocument();
+    expect(await screen.findByText("Учёток пока нет")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Новая учётка/ }));
+    const dialog = await screen.findByRole("dialog");
+    const create = within(dialog).getByRole("button", { name: "Создать" });
+    await user.type(within(dialog).getByLabelText("Название"), "Linux-серверы (deploy)");
+    await user.type(within(dialog).getByLabelText("Логин на хосте"), "deploy");
+    expect(create).toBeDisabled(); // без пароля нельзя
+    await user.type(within(dialog).getByLabelText("Пароль", { selector: "input[type=password]" }), "S3cret-pass");
+    await user.type(within(dialog).getByLabelText(/Адреса и подсети/), "10.20.1.0/24");
+    await user.click(await within(dialog).findByRole("button", { name: /DMZ/ }));
+    await user.click(create);
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/projects/p1/ssh-credentials")).toBe(true));
+    expect(calls.find((c) => c.method === "POST")!.body).toEqual({
+      name: "Linux-серверы (deploy)",
+      username: "deploy",
+      auth: "password",
+      port: 22,
+      become: "sudo",
+      hosts: ["10.20.1.0/24"],
+      groups: ["DMZ"],
+      is_active: true,
+      note: "",
+      password: "S3cret-pass",
+    });
+  });
+
+  it("показывает изменившийся ключ и принимает новый ключ с причиной", async () => {
+    const calls = mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/ssh-credentials": [cred],
+      "/projects/p1/ssh-hosts": hosts,
+      "POST /host-keys/22/accept": { ...changed, status: "pinned", mismatch: null },
+    });
+    renderAt("/access");
+    expect(await screen.findByText(/У 1 хоста изменился ключ SSH/)).toBeInTheDocument();
+    expect(screen.getByText("ключ изменился")).toBeInTheDocument();
+    expect(screen.getByText("нет подходящей")).toBeInTheDocument();
+    expect(screen.getAllByText("подсеть «10.20.1.0/24»", { exact: false })).toHaveLength(2);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Без учётки/ }));
+    expect(screen.queryByText("web-01", { exact: false })).not.toBeInTheDocument();
+    expect(screen.getByText("arm-01")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Все/ }));
+    await user.click(screen.getByRole("button", { name: "Принять новый" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(changed.mismatch.fingerprint)).toBeInTheDocument();
+    const accept = within(dialog).getByRole("button", { name: "Принять ключ" });
+    expect(accept).toBeDisabled();
+    await user.type(within(dialog).getByLabelText(/Причина/), "Хост переустановлен");
+    await user.click(accept);
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/host-keys/22/accept")).toBe(true));
+    expect(calls.find((c) => c.path === "/host-keys/22/accept")!.body).toEqual({ reason: "Хост переустановлен" });
+  });
+
+  it("проверка входа показывает итог и закреплённый ключ", async () => {
+    mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/ssh-credentials": [cred],
+      "/projects/p1/ssh-hosts": hosts,
+      "POST /ssh-credentials/3/check": {
+        result: "ok",
+        label: "Вход выполнен",
+        message: "Вход выполнен",
+        ok: true,
+        facts: { user: "deploy", uid: 1000, os: "Debian GNU/Linux 12 (bookworm)", become: "sudo" },
+        key_state: "new",
+        host_key: pinned,
+      },
+    });
+    renderAt("/access");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Проверить/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText(/Хост проекта/)).toHaveValue("10.20.1.11");
+    await user.click(within(dialog).getByRole("button", { name: /Проверить/ }));
+    expect(await within(dialog).findByText(/deploy \(uid 1000\) · Debian GNU\/Linux 12 \(bookworm\) · sudo работает/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Ключ хоста закреплён/)).toBeInTheDocument();
+  });
+
+  it("исполнитель не видит пункта «Доступ к хостам»", async () => {
+    mockApi({ "/me": engineer, "/projects": [project], "/projects/p1/jobs": [], "/projects/p1/tickets": [brief], "/projects/p1/ticket-facets": { os: [], kinds: [] } });
+    renderAt("/tickets");
+    expect(await screen.findByRole("heading", { name: "Заявки" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Доступ к хостам/ })).not.toBeInTheDocument();
+  });
+});

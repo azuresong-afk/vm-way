@@ -1,4 +1,4 @@
-"""Модель данных «Устранения» (этап 1; окна обслуживания, активы и правила назначения этапа 2)."""
+"""Модель данных «Устранения» (этап 1; окна, активы и правила, SSH-учётки и ключи хостов этапа 2)."""
 
 import uuid
 from datetime import date, datetime
@@ -444,3 +444,65 @@ class Outbox(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SshCredential(Base):
+    """SSH-учётка проекта (задача 2.3): логин и пароль или закрытый ключ, повышение прав через sudo.
+
+    Секреты (`password`, `private_key`, `passphrase`, `become_password`) лежат только в `secret_enc` —
+    JSON, зашифрованный AES-GCM ключом `VM_ENCRYPTION_KEY` и привязанный к id учётки. API их не отдаёт.
+    Охват — адреса и подсети (`hosts`) и группы активов «Сканера» (`groups`); пустой — все хосты
+    проекта."""
+
+    __tablename__ = "ssh_credentials"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_ssh_credential_project_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    username: Mapped[str] = mapped_column(String(128))
+    auth: Mapped[str] = mapped_column(String(16), default="password")  # password | key
+    port: Mapped[int] = mapped_column(Integer, default=22)
+    become: Mapped[str] = mapped_column(String(8), default="sudo")  # sudo | none
+    secret_enc: Mapped[str] = mapped_column(Text, default="")
+    key_type: Mapped[str] = mapped_column(String(64), default="")
+    key_fingerprint: Mapped[str] = mapped_column(String(100), default="")
+    has_become_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    hosts: Mapped[list] = mapped_column(JSON, default=list)
+    groups: Mapped[list] = mapped_column(JSON, default=list)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_check_host: Mapped[str] = mapped_column(String(255), default="")
+    last_check_result: Mapped[str] = mapped_column(String(32), default="")
+    last_check_message: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class HostKey(Base):
+    """Закреплённый ключ хоста (TOFU, задача 2.3) — по проекту, адресу и порту.
+
+    Первое подключение запоминает ключ (`pinned_via=tofu`); другой ключ — отказ до входа, ключ
+    записывается в `mismatch_*`, статус `mismatch`, и подключения к хосту запрещены, пока
+    руководитель не примет новый ключ или не сбросит закрепление."""
+
+    __tablename__ = "host_keys"
+    __table_args__ = (UniqueConstraint("project_id", "host", "port", name="uq_host_key_project_host_port"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    host: Mapped[str] = mapped_column(String(255))
+    port: Mapped[int] = mapped_column(Integer, default=22)
+    key_type: Mapped[str] = mapped_column(String(64))
+    fingerprint: Mapped[str] = mapped_column(String(100))
+    public_key: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="pinned")  # pinned | mismatch
+    pinned_via: Mapped[str] = mapped_column(String(16), default="tofu")  # tofu | accepted
+    pinned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    pinned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mismatch_key_type: Mapped[str] = mapped_column(String(64), default="")
+    mismatch_fingerprint: Mapped[str] = mapped_column(String(100), default="")
+    mismatch_public_key: Mapped[str] = mapped_column(Text, default="")
+    mismatch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mismatch_count: Mapped[int] = mapped_column(Integer, default=0)

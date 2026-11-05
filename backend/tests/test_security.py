@@ -32,3 +32,13 @@ def test_secret_encryption():
     assert encrypt_secret("p@ss") != enc  # случайный nonce
     with pytest.raises(InvalidTag):
         decrypt_secret(enc[:-4] + "AAAA")
+
+
+def test_secret_bound_to_context():
+    enc = encrypt_secret("key-material", "ssh-credential:1")
+    assert decrypt_secret(enc, "ssh-credential:1") == "key-material"
+    # Секрет, переставленный в другую запись (или прочитанный без контекста), не расшифровывается.
+    with pytest.raises(InvalidTag):
+        decrypt_secret(enc, "ssh-credential:2")
+    with pytest.raises(InvalidTag):
+        decrypt_secret(enc)

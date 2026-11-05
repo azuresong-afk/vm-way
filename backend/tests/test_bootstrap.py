@@ -38,3 +38,27 @@ def test_demo_seed_idempotent(db, monkeypatch):
     assert {u.username for u in db.scalars(select(User))} == {"manager", "engineer", "engineer2", "viewer"}
     windows = db.scalars(select(MaintenanceWindow).order_by(MaintenanceWindow.id)).all()
     assert [(w.name, w.kind) for w in windows] == [("Ночное окно", "recurring"), ("Новогодняя заморозка", "blackout")]
+
+
+def test_demo_ssh_credentials_and_keys(db, monkeypatch):
+    from app.models import HostKey, SshCredential
+    from app.services import credentials
+
+    monkeypatch.setenv("VM_DEMO", "1")
+    monkeypatch.setenv("VM_DEMO_PASSWORD", "demo-password-1")
+    get_settings.cache_clear()
+    try:
+        pr = bootstrap.ensure_demo(db)
+    finally:
+        get_settings.cache_clear()
+    creds = db.scalars(select(SshCredential).order_by(SshCredential.id)).all()
+    assert [(c.name, c.auth) for c in creds] == [("Linux-серверы (deploy)", "password"), ("Базы данных (ключ)", "key")]
+    assert credentials.login_for(creds[1]).private_key.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
+    keys = {k.host: k.status for k in db.scalars(select(HostKey))}
+    assert keys["10.20.1.13"] == "mismatch" and keys["10.20.1.11"] == "pinned"
+    assert credentials.resolve(creds, "10.20.3.31", {"Базы данных"}).credential is creds[1]
+    assert credentials.resolve(creds, "10.20.3.32", set()).credential is creds[0]
+    assert credentials.resolve(creds, "10.20.2.21", set()) is None
+    assert pr is not None
+    # login_for закэшировал настройки с VM_DEMO=1 — сбросить, чтобы демо не протекло в другие тесты.
+    get_settings.cache_clear()

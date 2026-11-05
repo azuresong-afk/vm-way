@@ -12,6 +12,7 @@ class Perm(StrEnum):
     VERIFY = "verify"
     WINDOWS_MANAGE = "windows_manage"
     RULES_MANAGE = "rules_manage"
+    CREDENTIALS_MANAGE = "credentials_manage"
     PROJECTS_MANAGE = "projects_manage"
     SOURCES_MANAGE = "sources_manage"
     USERS_MANAGE = "users_manage"
@@ -33,6 +34,7 @@ ROLES: dict[str, dict] = {
             Perm.VERIFY,
             Perm.WINDOWS_MANAGE,
             Perm.RULES_MANAGE,
+            Perm.CREDENTIALS_MANAGE,
             Perm.AUDIT_VIEW,
         },
     },
