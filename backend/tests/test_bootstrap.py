@@ -35,7 +35,7 @@ def test_demo_seed_idempotent(db, monkeypatch):
     assert len(db.scalars(select(Project)).all()) == 1
     assert [s.base_url for s in db.scalars(select(ScannerSource))] == ["mock://demo"]
     assert [lk.engagement_id for lk in db.scalars(select(SourceLink))] == [7]
-    assert {u.username for u in db.scalars(select(User))} == {"manager", "engineer", "engineer2", "viewer"}
+    assert {u.username for u in db.scalars(select(User))} == {"manager", "ciso", "engineer", "engineer2", "viewer"}
     windows = db.scalars(select(MaintenanceWindow).order_by(MaintenanceWindow.id)).all()
     assert [(w.name, w.kind) for w in windows] == [("Ночное окно", "recurring"), ("Новогодняя заморозка", "blackout")]
 

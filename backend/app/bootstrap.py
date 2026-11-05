@@ -27,6 +27,8 @@ log = logging.getLogger("vm.bootstrap")
 
 DEMO_USERS = [
     ("manager", "Петрова А. С.", ["manager"], []),
+    # Второй руководитель — утверждающий исключения, которые оформила Петрова (задача 2.5).
+    ("ciso", "Белов К. А. (директор по ИБ)", ["manager"], []),
     ("engineer", "Смирнов Д. В.", ["engineer"], ["remediate_execute"]),
     ("engineer2", "Ковалёв И. Н.", ["engineer"], []),
     ("viewer", "Орлова Е. М. (заказчик)", ["viewer"], []),
@@ -75,6 +77,8 @@ def ensure_demo(db: Session) -> Project | None:
         username="svc-vm",
         auto_import=True,
         poll_minutes=15,
+        # Мок разрешает отметку ложных срабатываний (у сервисной учётки — роль operator).
+        sync_false_positives=True,
     )
     db.add(src)
     db.flush()

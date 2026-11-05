@@ -11,6 +11,7 @@ from app.api import (
     audit_log,
     auth,
     credentials,
+    exceptions,
     meta,
     projects,
     rollouts,
@@ -24,6 +25,7 @@ from app.api import (
 )
 from app.config import get_settings
 from app.db import SessionLocal
+from app.services import exceptions as _exceptions  # noqa: F401 — обработчик exception_sync
 from app.services import importer, verification  # noqa: F401 — регистрируют обработчики задач
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -71,6 +73,7 @@ def create_app() -> FastAPI:
         rules.router,
         credentials.router,
         rollouts.router,
+        exceptions.router,
         summary.router,
         audit_log.router,
     ):

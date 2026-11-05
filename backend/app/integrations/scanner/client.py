@@ -9,7 +9,9 @@
   groups[{id, name}], …} без пагинации;
 - GET /engagements/{id}/asset-groups — список AssetGroupOut {id, name, asset_count, …};
 - POST /engagements/{id}/runs — RunCreated (RunOut + accepted_targets: int, denied_targets: [{target, reason, count}]),
-  ни одной разрешённой цели — 422.
+  ни одной разрешённой цели — 422;
+- PUT /findings/{id}/false-positive {reason} — FindingOut с false_positive; DELETE — снять отметку
+  (404, если отметки нет). Нужна роль operator (право triage_findings). Отметка — по (договор, dedup_key).
 """
 
 import threading
@@ -46,6 +48,8 @@ class ScannerClient(Protocol):
     def fixes(self, run_id: int) -> list[dict]: ...
     def coverage(self, run_id: int) -> list[dict]: ...
     def start_run(self, engagement_id: int, body: dict) -> dict: ...
+    def mark_false_positive(self, finding_id: int, reason: str | None) -> dict: ...
+    def unmark_false_positive(self, finding_id: int) -> bool: ...
 
 
 class HttpScannerClient:
@@ -158,6 +162,19 @@ class HttpScannerClient:
 
     def start_run(self, engagement_id: int, body: dict) -> dict:
         return self._request("POST", f"/engagements/{engagement_id}/runs", json=body).json()
+
+    def mark_false_positive(self, finding_id: int, reason: str | None) -> dict:
+        return self._request("PUT", f"/findings/{finding_id}/false-positive", json={"reason": reason}).json()
+
+    def unmark_false_positive(self, finding_id: int) -> bool:
+        """Снять отметку. False — отметки и так не было (404 «not marked»)."""
+        try:
+            self._request("DELETE", f"/findings/{finding_id}/false-positive")
+        except ScannerError as e:
+            if e.status == 404 and "not marked" in str(e.detail or ""):
+                return False
+            raise
+        return True
 
 
 def normalize_coverage(data: dict) -> list[dict]:

@@ -22,11 +22,9 @@ describe("формат", () => {
 });
 
 describe("правила переходов", () => {
-  it("причина нужна для исключений и возврата из «Исправлено»", () => {
-    expect(reasonRequired("assigned", "risk_accepted")).toBe(true);
-    expect(reasonRequired("risk_accepted", "new")).toBe(true);
-    expect(reasonRequired("fixed", "in_progress")).toBe(true);
-    expect(reasonRequired("assigned", "in_progress")).toBe(false);
+  it("причина нужна для возврата из «Исправлено»; исключения — отдельной формой", () => {
+    expect(reasonRequired("fixed")).toBe(true);
+    expect(reasonRequired("assigned")).toBe(false);
   });
 });
 

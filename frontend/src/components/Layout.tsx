@@ -13,12 +13,14 @@ import {
   PlugZap,
   Rocket,
   Server,
+  ShieldOff,
   Sun,
   UserCheck,
   Users,
   Workflow,
   Wrench,
 } from "lucide-react";
+import { api } from "../api/client";
 import { useAuth, type Perm } from "../auth/AuthContext";
 import { projectLabel, useProject } from "../auth/ProjectContext";
 import { useTheme } from "../theme/ThemeContext";
@@ -42,6 +44,7 @@ const NAV: NavItem[] = [
   { to: "/my", label: "Мои задачи", icon: <UserCheck size={18} />, perm: "ticket_work" },
   { to: "/windows", label: "Окна и план", icon: <CalendarClock size={18} />, perm: "view" },
   { to: "/rollouts", label: "Раскатки", icon: <Rocket size={18} />, perm: "view" },
+  { to: "/exceptions", label: "Исключения", icon: <ShieldOff size={18} />, perm: "view" },
   { to: "/assets", label: "Активы", icon: <Server size={18} />, perm: "view" },
   { to: "/rules", label: "Правила назначения", icon: <Workflow size={18} />, perm: "rules_manage" },
   { to: "/access", label: "Доступ к хостам", icon: <KeyRound size={18} />, perm: "credentials_manage" },
@@ -104,8 +107,34 @@ export function Brand() {
   );
 }
 
+/** Сколько исключений ждёт решения текущего пользователя — счётчик у пункта «Исключения». */
+function useToApprove(): number {
+  const { has } = useAuth();
+  const { current } = useProject();
+  const location = useLocation();
+  const [n, setN] = useState(0);
+  const projectId = current?.id;
+  const can = has("exception_approve");
+  useEffect(() => {
+    if (!projectId || !can) {
+      setN(0);
+      return;
+    }
+    let alive = true;
+    api
+      .exceptionCounts(projectId)
+      .then((c) => alive && setN(c.to_approve))
+      .catch(() => alive && setN(0));
+    return () => {
+      alive = false;
+    };
+  }, [projectId, can, location.pathname, location.search]);
+  return n;
+}
+
 export function Layout() {
   const { me, has, logout } = useAuth();
+  const toApprove = useToApprove();
   const items = NAV.filter((i) => has(i.perm));
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -124,6 +153,11 @@ export function Layout() {
           <NavLink key={i.to} to={i.to} end={i.to === "/"} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
             {i.icon}
             <span>{i.label}</span>
+            {i.to === "/exceptions" && toApprove > 0 && (
+              <span className="count" title="Ждут вашего утверждения">
+                {toApprove}
+              </span>
+            )}
           </NavLink>
         ))}
         {admin.length > 0 && <div className="nav-section">Администрирование</div>}

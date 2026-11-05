@@ -5,13 +5,14 @@ import type { AssignableUser, Severity, TicketDetail, TicketStatus } from "../ap
 import { useAuth } from "../auth/AuthContext";
 import { useAsync } from "../lib/useAsync";
 import { plural } from "../lib/format";
-import { EXCEPTION_STATUSES, SEVERITIES, SEVERITY_LABEL, STATUS_LABEL, reasonRequired } from "../lib/labels";
+import { SEVERITIES, SEVERITY_LABEL, STATUS_LABEL, reasonRequired } from "../lib/labels";
 import { notifyJobs } from "../lib/jobs";
 import { ErrorAlert, HostStatusPill, Modal } from "./ui";
 import { PrepareRolloutModal } from "./RolloutForm";
+import { RequestExceptionModal } from "./Exceptions";
 import { fmtRange, usableWindows } from "../lib/zoned";
 
-type Dialog = "assign" | "status" | "risk" | "override" | "verify" | "window" | "rollout" | null;
+type Dialog = "assign" | "status" | "exception" | "override" | "verify" | "window" | "rollout" | null;
 
 /** Выбор исполнителя с загрузкой: сколько открытых заявок проекта уже на человеке. */
 export function AssigneeSelect({
@@ -157,11 +158,11 @@ function AssignModal({ t, onClose, onDone }: { t: TicketDetail; onClose: () => v
 }
 
 function StatusModal({ t, onClose, onDone }: { t: TicketDetail; onClose: () => void; onDone: () => void }) {
-  const options = t.can.statuses.filter((s) => !EXCEPTION_STATUSES.includes(s) || EXCEPTION_STATUSES.includes(t.status));
+  const options = t.can.statuses;
   const [to, setTo] = useState<TicketStatus | "">(options[0] ?? "");
   const [reason, setReason] = useState("");
   const s = useSubmit(onDone);
-  const need = to !== "" && reasonRequired(t.status, to);
+  const need = to !== "" && reasonRequired(t.status);
   return (
     <Modal
       title={`Перевести заявку №${t.id}`}
@@ -194,47 +195,6 @@ function StatusModal({ t, onClose, onDone }: { t: TicketDetail; onClose: () => v
         <span>Причина{need ? "" : " (необязательно)"}</span>
         <textarea className="textarea" style={{ fontFamily: "var(--font)", minHeight: 89 }} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={2000} />
         {need && <small>Для этого перехода причина обязательна — она попадёт в историю заявки и журнал аудита.</small>}
-      </label>
-      {s.error && <ErrorAlert error={s.error} />}
-    </Modal>
-  );
-}
-
-function RiskModal({ t, onClose, onDone }: { t: TicketDetail; onClose: () => void; onDone: () => void }) {
-  const [to, setTo] = useState<TicketStatus>("risk_accepted");
-  const [reason, setReason] = useState("");
-  const s = useSubmit(onDone);
-  return (
-    <Modal
-      title={`Исключение для заявки №${t.id}`}
-      onClose={onClose}
-      footer={
-        <Footer
-          onClose={onClose}
-          busy={s.busy}
-          danger
-          label={to === "risk_accepted" ? "Принять риск" : "Отметить ложным"}
-          disabled={!reason.trim()}
-          onSubmit={() => void s.run(() => api.setStatus(t.id, to, reason.trim()))}
-        />
-      }
-    >
-      <div className="alert alert-warn">
-        Заявка закроется без исправления: уязвимости останутся на хостах, повторная проверка по ней проводиться не будет. Вернуть заявку в работу сможет
-        руководитель, указав причину.
-      </div>
-      <div className="seg" role="radiogroup" aria-label="Вид исключения">
-        <button type="button" role="radio" aria-checked={to === "risk_accepted"} onClick={() => setTo("risk_accepted")}>
-          Принять риск
-        </button>
-        <button type="button" role="radio" aria-checked={to === "false_positive"} onClick={() => setTo("false_positive")}>
-          Ложное срабатывание
-        </button>
-      </div>
-      <label className="field">
-        <span>Обоснование</span>
-        <textarea className="textarea" style={{ fontFamily: "var(--font)", minHeight: 89 }} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={2000} />
-        <small>Утверждающий и дата пересмотра появятся на этапе 2.</small>
       </label>
       {s.error && <ErrorAlert error={s.error} />}
     </Modal>
@@ -366,8 +326,7 @@ export function TicketActions({ t, onChanged, compact }: { t: TicketDetail; onCh
   };
   const mine = t.assignee?.id === me?.id;
   const verifying = t.verifications.some((v) => v.status === "requested" || v.status === "running");
-  const work = t.can.statuses.filter((s) => !EXCEPTION_STATUSES.includes(s) || EXCEPTION_STATUSES.includes(t.status));
-  const canException = t.can.statuses.some((s) => EXCEPTION_STATUSES.includes(s)) && !EXCEPTION_STATUSES.includes(t.status);
+  const work = t.can.statuses;
   // Главная кнопка: свободную — взять, свою — отправить на проверку.
   const primary = t.can.take ? "take" : t.can.verify && (mine || !t.can.take) ? "verify" : null;
   const sm = compact ? " btn-sm" : "";
@@ -406,9 +365,9 @@ export function TicketActions({ t, onChanged, compact }: { t: TicketDetail; onCh
             <ArrowRightLeft size={15} aria-hidden="true" /> Перевести
           </button>
         )}
-        {canException && (
-          <button type="button" className={`btn${sm} btn-danger`} onClick={() => setDialog("risk")}>
-            <ShieldOff size={15} aria-hidden="true" /> Принять риск
+        {t.can.exception && (
+          <button type="button" className={`btn${sm}`} onClick={() => setDialog("exception")}>
+            <ShieldOff size={15} aria-hidden="true" /> Исключение
           </button>
         )}
         {t.can.override && !compact && (
@@ -432,7 +391,7 @@ export function TicketActions({ t, onChanged, compact }: { t: TicketDetail; onCh
       {error && <ErrorAlert error={error} />}
       {dialog === "assign" && <AssignModal t={t} onClose={close} onDone={done} />}
       {dialog === "status" && <StatusModal t={t} onClose={close} onDone={done} />}
-      {dialog === "risk" && <RiskModal t={t} onClose={close} onDone={done} />}
+      {dialog === "exception" && <RequestExceptionModal t={t} onClose={close} onDone={done} />}
       {dialog === "override" && <OverrideModal t={t} onClose={close} onDone={done} />}
       {dialog === "verify" && <VerifyModal t={t} onClose={close} onDone={done} />}
       {dialog === "window" && <WindowModal t={t} onClose={close} onDone={done} />}

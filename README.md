@@ -16,7 +16,7 @@ scripts/smoke.sh                  # проверка стека через ве�
 
 Интерфейс — `http://localhost:18081`, вход — администратор из `.env`. Порты меняются в `.env` (`VM_WEB_PORT`, `VM_API_PORT`, `VM_DB_PORT`); API и БД слушают только `127.0.0.1`.
 
-Демо-стенд без настоящего «Сканера» (встроенный мок: 3 ОС, 20 хостов, три плановых прогона; пользователи `manager`, `engineer`, `engineer2`, `viewer`):
+Демо-стенд без настоящего «Сканера» (встроенный мок: 3 ОС, 20 хостов, три плановых прогона; пользователи `manager`, `ciso`, `engineer`, `engineer2`, `viewer`):
 
 ```bash
 scripts/gen-env.sh --demo && docker compose up --build -d

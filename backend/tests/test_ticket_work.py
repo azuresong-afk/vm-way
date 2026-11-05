@@ -143,23 +143,22 @@ def test_only_assignee_or_manager_moves_ticket(client, as_, project, users, engi
     assert _st(client, as_("admin"), tid, "fixed").status_code == 403
 
 
-def test_exceptions_by_manager_with_reason_and_reopen(client, as_, project, users, db):
+def test_exception_statuses_only_via_exceptions(client, as_, project, users, db):
+    """С задачи 2.5 «Принят риск» и «Ложное срабатывание» ставит только утверждённое исключение."""
     tid = _one(client, as_, project)["id"]
     client.post(f"/tickets/{tid}/take", headers=as_("engineer"))
-    # Исполнитель исключение не ставит.
-    assert _st(client, as_("engineer"), tid, "risk_accepted", "Сервер выводится").status_code == 403
-    assert _st(client, as_("manager"), tid, "risk_accepted").status_code == 422  # без причины
-    r = _st(client, as_("manager"), tid, "risk_accepted", "Сервер выводится из эксплуатации в декабре")
-    assert r.status_code == 200 and r.json()["closed_at"]
-    # Закрытая заявка: не назначить, статус работы не поменять.
-    assert client.post(f"/tickets/{tid}/assign", headers=as_("manager"), json={"assignee_id": None}).status_code == 409
-    assert _st(client, as_("manager"), tid, "in_progress").status_code == 409
+    for who in ("engineer", "manager"):
+        r = _st(client, as_(who), tid, "risk_accepted", "Сервер выводится из эксплуатации в декабре")
+        assert r.status_code == 409 and "исключением" in r.json()["detail"]
     card = client.get(f"/tickets/{tid}", headers=as_("manager")).json()
-    assert card["can"]["statuses"] == ["assigned"]
-    # Возврат из исключения — в «Назначена» (исполнитель остался), с причиной.
-    assert _st(client, as_("manager"), tid, "assigned").status_code == 422
-    r = _st(client, as_("manager"), tid, "assigned", "Вывод отложили")
-    assert r.status_code == 200 and r.json()["closed_at"] is None
+    assert "risk_accepted" not in card["can"]["statuses"] and card["can"]["exception"] is True
+    # Массово — тоже нельзя.
+    r = client.post(
+        f"/projects/{project}/tickets/bulk",
+        headers=as_("manager"),
+        json={"ticket_ids": [tid], "action": "status", "status": "false_positive", "reason": "Пакет не используется"},
+    )
+    assert r.json()["changed"] == [] and "исключением" in r.json()["failed"][0]["error"]
 
 
 def test_no_vendor_fix_ticket(client, as_, project, users):
@@ -168,9 +167,6 @@ def test_no_vendor_fix_ticket(client, as_, project, users):
     r = client.post(f"/tickets/{t['id']}/take", headers=as_("engineer"))
     assert r.json()["status"] == "no_vendor_fix"
     assert _st(client, as_("engineer"), t["id"], "in_progress").status_code == 409
-    _st(client, as_("manager"), t["id"], "false_positive", "Пакет не используется")
-    r = _st(client, as_("manager"), t["id"], "no_vendor_fix", "Ошиблись")
-    assert r.status_code == 200 and r.json()["status"] == "no_vendor_fix"
 
 
 def test_assign_rules(client, as_, project, users):
@@ -254,6 +250,7 @@ def test_comments_and_watch(client, as_, project, users, db):
         "verify": False,
         "window": False,
         "rollout": False,
+        "exception": False,
     }
     client.post(f"/tickets/{tid}/watch", headers=as_("viewer"), json={"watch": False})
     assert client.get(f"/tickets/{tid}", headers=as_("viewer")).json()["watching"] is False

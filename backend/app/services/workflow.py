@@ -36,8 +36,8 @@ SEVERITIES = ["critical", "high", "medium", "low", "info"]
 
 # Работа по заявке идёт: снятие исполнителя возвращает такую заявку в «Новая».
 WORK_STATUSES = {"assigned", "in_progress", "waiting_window"}
-# Исключения. Выбор: на этапе 1 руководитель ставит их с обязательной причиной; утверждающий
-# и дата пересмотра принятия риска — этап 2 (задача 2.5).
+# Исключения (задача 2.5): в эти статусы заявку переводит только утверждённое исключение
+# (app/services/exceptions.py), обратно — его снятие или истечение. Вручную через /status — нельзя.
 EXCEPTION_STATUSES = {"risk_accepted", "false_positive"}
 CLOSED_STATUSES = {"verified"} | EXCEPTION_STATUSES
 # Ставит только система (импорт, повторная проверка).
@@ -45,20 +45,20 @@ SYSTEM_STATUSES = {"verified", "not_verified", "regression", "no_vendor_fix"}
 
 _WORK = {"in_progress", "waiting_window", "fixed"}
 MANUAL: dict[str, set[str]] = {
-    "new": set(EXCEPTION_STATUSES),  # в «Назначена» — только назначением исполнителя
-    "assigned": _WORK | EXCEPTION_STATUSES,
-    "in_progress": {"waiting_window", "fixed"} | EXCEPTION_STATUSES,
-    "waiting_window": {"in_progress", "fixed"} | EXCEPTION_STATUSES,
+    "new": set(),  # в «Назначена» — только назначением исполнителя
+    "assigned": set(_WORK),
+    "in_progress": {"waiting_window", "fixed"},
+    "waiting_window": {"in_progress", "fixed"},
     "fixed": {"in_progress"},  # вернуть в работу, не дожидаясь проверки (с причиной)
-    "not_verified": _WORK | EXCEPTION_STATUSES,
-    "regression": _WORK | EXCEPTION_STATUSES,
-    "no_vendor_fix": set(EXCEPTION_STATUSES),
+    "not_verified": set(_WORK),
+    "regression": set(_WORK),
+    "no_vendor_fix": set(),
     "verified": set(),  # повторное появление уязвимости откроет заявку как «Регрессия» (задача 1.6)
-    "risk_accepted": set(),  # возврат — см. reopen_status()
+    "risk_accepted": set(),  # возврат — снятие или истечение исключения
     "false_positive": set(),
 }
 # Переходы, для которых причина обязательна.
-REASON_REQUIRED = EXCEPTION_STATUSES | {"reopen", "return"}
+REASON_REQUIRED = {"return"}
 
 
 class WorkflowError(Exception):
@@ -94,21 +94,13 @@ def reopen_status(t: Ticket) -> str:
 
 
 def _kind(t: Ticket, to: str) -> str:
-    """Вид перехода: exception — в исключение, reopen — из исключения, return — из «Исправлено» обратно."""
-    if to in EXCEPTION_STATUSES:
-        return "exception"
-    if t.status in EXCEPTION_STATUSES:
-        return "reopen"
-    if t.status == "fixed":
-        return "return"
-    return "work"
+    """Вид перехода: return — из «Исправлено» обратно в работу, work — остальные."""
+    return "return" if t.status == "fixed" else "work"
 
 
 def allowed_targets(t: Ticket, actor: Actor) -> list[str]:
     """Статусы, в которые этот пользователь может перевести заявку прямо сейчас."""
     targets = set(MANUAL.get(t.status, set()))
-    if t.status in EXCEPTION_STATUSES:
-        targets = {reopen_status(t)}
     out = []
     for to in sorted(targets, key=list(STATUSES).index):
         try:
@@ -124,16 +116,18 @@ def _check_transition(t: Ticket, actor: Actor, to: str) -> str:
         raise WorkflowError(f"Неизвестный статус: {to}", 422)
     if to == t.status:
         raise WorkflowError(f"Заявка уже в статусе «{label(to)}»")
-    allowed = {reopen_status(t)} if t.status in EXCEPTION_STATUSES else MANUAL.get(t.status, set())
+    if to in EXCEPTION_STATUSES:
+        raise WorkflowError(
+            f"«{label(to)}» ставится исключением: оформите его с обоснованием, утверждающим и датой пересмотра", 409
+        )
+    if t.status in EXCEPTION_STATUSES:
+        raise WorkflowError("Заявка в исключении: чтобы вернуть её в работу, снимите исключение")
+    allowed = MANUAL.get(t.status, set())
     if to not in allowed:
         if to in SYSTEM_STATUSES:
             raise WorkflowError(f"Статус «{label(to)}» ставит только система по итогам импорта или проверки")
         raise WorkflowError(f"Переход «{label(t.status)}» → «{label(to)}» не разрешён")
     kind = _kind(t, to)
-    if kind in ("exception", "reopen"):
-        if not actor.can(Perm.TICKET_ASSIGN):
-            raise WorkflowError("Исключения ставит и снимает руководитель", 403)
-        return kind
     if not actor.can(Perm.TICKET_WORK):
         raise WorkflowError("Недостаточно прав", 403)
     if t.assignee_id is None:

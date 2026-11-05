@@ -17,7 +17,7 @@ export function me(roles: string[], permissions: MeOut["permissions"]): MeOut {
 }
 
 export const engineer = me(["engineer"], ["view", "import", "ticket_work", "verify"]);
-export const manager = me(["manager"], ["view", "import", "ticket_work", "ticket_assign", "ticket_override", "verify", "windows_manage", "rules_manage", "credentials_manage", "audit_view"]);
+export const manager = me(["manager"], ["view", "import", "ticket_work", "ticket_assign", "ticket_override", "verify", "windows_manage", "rules_manage", "credentials_manage", "rollout_approve", "exception_approve", "audit_view"]);
 
 export const brief: TicketBrief = {
   id: 5,
@@ -79,7 +79,8 @@ export const detail: TicketDetail = {
   watching: false,
   verifications: [],
   rollouts: [],
-  can: { statuses: [], take: true, assign: false, override: false, comment: true, verify: true, window: false, rollout: false },
+  exceptions: [],
+  can: { statuses: [], take: true, assign: false, override: false, comment: true, verify: true, window: false, rollout: false, exception: false },
 };
 
 export const windowOut: WindowOut = {
