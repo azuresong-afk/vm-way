@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     poll_enabled: bool = True
     verify_poll_seconds: float = 5.0
     verify_timeout_minutes: int = 240
+    # Раскатки (задача 2.4): сколько ждать хост после перезагрузки и как часто стучаться.
+    rollout_reboot_timeout_seconds: int = 600
+    rollout_reconnect_seconds: float = 10.0
 
 
 @lru_cache

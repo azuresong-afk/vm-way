@@ -78,7 +78,8 @@ export const detail: TicketDetail = {
   watchers: [],
   watching: false,
   verifications: [],
-  can: { statuses: [], take: true, assign: false, override: false, comment: true, verify: true, window: false },
+  rollouts: [],
+  can: { statuses: [], take: true, assign: false, override: false, comment: true, verify: true, window: false, rollout: false },
 };
 
 export const windowOut: WindowOut = {

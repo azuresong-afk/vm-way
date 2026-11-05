@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, BellOff, CalendarClock, CheckCheck, Hand, ShieldOff, SlidersHorizontal, UserPlus, ArrowRightLeft } from "lucide-react";
+import { Bell, BellOff, CalendarClock, CheckCheck, Hand, Rocket, ShieldOff, SlidersHorizontal, UserPlus, ArrowRightLeft } from "lucide-react";
 import { api } from "../api/client";
 import type { AssignableUser, Severity, TicketDetail, TicketStatus } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -8,9 +8,10 @@ import { plural } from "../lib/format";
 import { EXCEPTION_STATUSES, SEVERITIES, SEVERITY_LABEL, STATUS_LABEL, reasonRequired } from "../lib/labels";
 import { notifyJobs } from "../lib/jobs";
 import { ErrorAlert, HostStatusPill, Modal } from "./ui";
+import { PrepareRolloutModal } from "./RolloutForm";
 import { fmtRange, usableWindows } from "../lib/zoned";
 
-type Dialog = "assign" | "status" | "risk" | "override" | "verify" | "window" | null;
+type Dialog = "assign" | "status" | "risk" | "override" | "verify" | "window" | "rollout" | null;
 
 /** Выбор исполнителя с загрузкой: сколько открытых заявок проекта уже на человеке. */
 export function AssigneeSelect({
@@ -385,6 +386,11 @@ export function TicketActions({ t, onChanged, compact }: { t: TicketDetail; onCh
           </button>
         )}
         {verifying && <span className="pill pill-info pill-running">Идёт проверка</span>}
+        {t.can.rollout && (
+          <button type="button" className={`btn${sm}`} onClick={() => setDialog("rollout")}>
+            <Rocket size={15} aria-hidden="true" /> Подготовить раскатку
+          </button>
+        )}
         {t.can.assign && (
           <button type="button" className={`btn${sm}`} onClick={() => setDialog("assign")}>
             <UserPlus size={15} aria-hidden="true" /> Назначить
@@ -430,6 +436,7 @@ export function TicketActions({ t, onChanged, compact }: { t: TicketDetail; onCh
       {dialog === "override" && <OverrideModal t={t} onClose={close} onDone={done} />}
       {dialog === "verify" && <VerifyModal t={t} onClose={close} onDone={done} />}
       {dialog === "window" && <WindowModal t={t} onClose={close} onDone={done} />}
+      {dialog === "rollout" && <PrepareRolloutModal t={t} onClose={close} />}
     </>
   );
 }

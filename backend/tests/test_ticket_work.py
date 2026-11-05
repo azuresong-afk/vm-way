@@ -253,6 +253,7 @@ def test_comments_and_watch(client, as_, project, users, db):
         "comment": False,
         "verify": False,
         "window": False,
+        "rollout": False,
     }
     client.post(f"/tickets/{tid}/watch", headers=as_("viewer"), json={"watch": False})
     assert client.get(f"/tickets/{tid}", headers=as_("viewer")).json()["watching"] is False

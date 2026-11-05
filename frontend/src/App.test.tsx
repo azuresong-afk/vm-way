@@ -524,3 +524,185 @@ describe("доступ к хостам", () => {
     expect(screen.queryByRole("link", { name: /Доступ к хостам/ })).not.toBeInTheDocument();
   });
 });
+
+describe("раскатки", () => {
+  beforeEach(() => setToken("t"));
+
+  const host = {
+    id: 1,
+    host: "10.20.3.32",
+    stage: null,
+    status: "dry_ok",
+    status_label: "Пробный прогон пройден",
+    reason: "",
+    credential: { id: 3, name: "deploy" },
+    dry_status: "ok",
+    dry_plan: [{ package: "glibc", from: "", to: "2.35-9.el7" }],
+    dry_note: "",
+    versions_before: { glibc: "2.35-6.el7" },
+    versions_after: {},
+    rollback: [],
+    reboot_required: false,
+    rebooted: false,
+    kernel_before: "",
+    kernel_after: "",
+    started_at: null,
+    finished_at: null,
+    duration_ms: 1200,
+    canary: true,
+  };
+  const ro = {
+    id: 5,
+    project_id: "p1",
+    ticket: { id: 42, title: "Обновить glibc на РЕД ОС 7.3 до 2.35-9.el7", status: "in_progress", os: "РЕД ОС 7.3" },
+    title: "Обновить glibc — заявка №42",
+    template: "package",
+    template_label: "Обновление пакетов",
+    manager: "dnf",
+    packages: ["glibc"],
+    fixed_version: "2.35-9.el7",
+    service: "",
+    command: "",
+    window: null,
+    canary_host: "10.20.3.32",
+    batch_percent: 10,
+    failure_threshold: 10,
+    status: "pending_approval",
+    status_label: "Ждёт утверждения",
+    error: "",
+    note: "",
+    prepared_by: { id: 2, username: "engineer", display_name: "Смирнов Д. В." },
+    dry_run_at: "2026-11-05T10:00:00Z",
+    dry_run_by: { id: 2, username: "engineer", display_name: "Смирнов Д. В." },
+    decided_by: null,
+    decided_at: null,
+    decision_note: "",
+    allow_reboot: false,
+    outside_window: false,
+    outside_window_reason: "",
+    custom_approved: false,
+    started_by: null,
+    started_at: null,
+    finished_at: null,
+    stop_requested: false,
+    stopped_by: null,
+    stop_reason: "",
+    verification_ids: [],
+    counts: { dry_ok: 1 },
+    hosts_total: 1,
+    created_at: "2026-11-05T09:00:00Z",
+    updated_at: "2026-11-05T10:00:00Z",
+    can: { dry_run: false, approve: true, reject: true, start: false, stop: false, cancel: true },
+    hosts: [host],
+    stages: [
+      { key: "dry_run", label: "Пробный прогон", state: "done" },
+      { key: "approval", label: "Утверждение", state: "running" },
+      { key: "canary", label: "Канарейка", state: "pending", hosts: ["10.20.3.32"] },
+      { key: "batches", label: "Партии", state: "pending", batches: [] },
+      { key: "verify", label: "Проверка", state: "pending" },
+    ],
+    step_counts: { "1": 3 },
+    verifications: [],
+  };
+
+  it("руководитель утверждает: без окна — только вне окна с причиной, перезагрузка — отдельной галочкой", async () => {
+    const calls = mockApi({
+      "/me": manager,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/rollouts/5": ro,
+      "POST /rollouts/5/approve": { ...ro, status: "approved", status_label: "Утверждена", can: { ...ro.can, approve: false } },
+    });
+    renderAt("/rollouts/5");
+    expect(await screen.findByRole("heading", { name: "Обновить glibc — заявка №42" })).toBeInTheDocument();
+    expect(screen.getByText("Пробный прогон пройден")).toBeInTheDocument();
+    expect(screen.getByText("2.35-9.el7")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Утвердить/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Утвердить раскатку №5" });
+    const submit = within(dialog).getByRole("button", { name: /Утвердить/ });
+    expect(within(dialog).getByRole("checkbox", { name: /вне окна/ })).toBeChecked();
+    expect(submit).toBeDisabled(); // нужна причина
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Причина запуска вне окна" }), "срочно, согласовано");
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /Разрешить перезагрузку/ }));
+    await userEvent.click(submit);
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/rollouts/5/approve")).toBe(true));
+    const body = calls.find((c) => c.path === "/rollouts/5/approve")!.body as Record<string, unknown>;
+    expect(body).toMatchObject({ allow_reboot: true, outside_window: true, outside_window_reason: "срочно, согласовано" });
+    expect(await screen.findByText("Утверждена")).toBeInTheDocument();
+  });
+
+  it("журнал хоста: команды с кодом возврата и выводом", async () => {
+    mockApi({
+      "/me": engineer,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/rollouts/5": { ...ro, can: { ...ro.can, approve: false, reject: false } },
+      "/rollouts/5/steps": [
+        { id: 1, host_id: 1, phase: "dry_run", label: "Пробный прогон", command: "sudo -S -p '' dnf upgrade --assumeno glibc", returncode: 1, ok: true, stdout: "Operation aborted.", stderr: "", duration_ms: 900, at: "" },
+        { id: 2, host_id: 1, phase: "dry_run", label: "Проверка", command: "sudo -n true", returncode: 1, ok: false, stdout: "", stderr: "sudo: a password is required", duration_ms: 10, at: "" },
+      ],
+    });
+    renderAt("/rollouts/5");
+    expect(await screen.findByText(/Ждёт утверждения руководителем/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Журнал 10.20.3.32" }));
+    expect(await screen.findByText("sudo -S -p '' dnf upgrade --assumeno glibc")).toBeInTheDocument();
+    expect(screen.getByText("sudo: a password is required")).toBeVisible();
+  });
+
+  it("исполнитель готовит раскатку из заявки: недопустимое имя пакета не отправляется", async () => {
+    const calls = mockApi({
+      "/me": { ...engineer, permissions: [...engineer.permissions, "remediate_execute"] },
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/tickets/5": { ...detail, can: { ...detail.can, rollout: true } },
+      "/tickets/5/history": { history: [], comments: [] },
+      "/rollout-meta": {
+        templates: [
+          { id: "package", label: "Обновление пакетов" },
+          { id: "kernel", label: "Обновление ядра" },
+          { id: "service", label: "Перезапуск службы" },
+          { id: "custom", label: "Произвольная команда" },
+        ],
+        managers: [{ id: "dnf", label: "dnf — РЕД ОС, RHEL 8+" }],
+        statuses: [],
+        host_statuses: [],
+        name_pattern: "",
+      },
+      "/tickets/5/rollout-draft": {
+        template: "package",
+        manager: "dnf",
+        packages: ["glibc"],
+        fixed_version: "2.35-9.el7",
+        service: "",
+        hosts: ["10.20.3.32"],
+        canary_host: "10.20.3.32",
+        window_id: null,
+        batch_percent: 10,
+        failure_threshold: 10,
+        reboot: false,
+        windows: [],
+        active_rollout_id: null,
+        can_prepare: true,
+        can_custom: false,
+        problems: [],
+      },
+      "POST /tickets/5/rollouts": ro,
+      "/rollouts/5": ro,
+    });
+    renderAt("/tickets/5");
+    await userEvent.click(await screen.findByRole("button", { name: /Подготовить раскатку/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Раскатка по заявке №5" });
+    expect(within(dialog).queryByRole("option", { name: "Произвольная команда" })).not.toBeInTheDocument();
+    const pkgs = within(dialog).getByRole("textbox", { name: /^Пакеты/ });
+    await userEvent.clear(pkgs);
+    await userEvent.type(pkgs, "glibc;reboot");
+    expect(within(dialog).getByText(/Недопустимые имена/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Подготовить" })).toBeDisabled();
+    await userEvent.clear(pkgs);
+    await userEvent.type(pkgs, "glibc");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Подготовить" }));
+    expect(await screen.findByRole("heading", { name: "Обновить glibc — заявка №42" })).toBeInTheDocument();
+    const body = calls.find((c) => c.method === "POST" && c.path === "/tickets/5/rollouts")!.body as Record<string, unknown>;
+    expect(body).toMatchObject({ template: "package", manager: "dnf", packages: ["glibc"], hosts: ["10.20.3.32"], canary_host: "10.20.3.32" });
+  });
+});

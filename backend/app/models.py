@@ -1,4 +1,4 @@
-"""Модель данных «Устранения» (этап 1; окна, активы и правила, SSH-учётки и ключи хостов этапа 2)."""
+"""Модель данных «Устранения» (этап 1; окна, активы и правила, SSH-учётки, ключи хостов и раскатки этапа 2)."""
 
 import uuid
 from datetime import date, datetime
@@ -50,6 +50,8 @@ class Project(Base):
     period_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active")
     platform_project_id: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True)
+    # Сколько хостов проекта раскатка (задача 2.4) обрабатывает одновременно.
+    rollout_parallelism: Mapped[int] = mapped_column(Integer, default=5)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -506,3 +508,105 @@ class HostKey(Base):
     mismatch_public_key: Mapped[str] = mapped_column(Text, default="")
     mismatch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mismatch_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Rollout(Base):
+    """Раскатка (задача 2.4) — изменение на хостах заявки по шаблону.
+
+    Этапы: пробный прогон → утверждение вторым человеком → канарейка → партии → повторная проверка.
+    Параметры задаются при подготовке и дальше не меняются: другое изменение — новая раскатка."""
+
+    __tablename__ = "rollouts"
+    __table_args__ = (Index("ix_rollouts_project_status", "project_id", "status"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(500))
+    template: Mapped[str] = mapped_column(String(16))  # package | kernel | service | custom
+    manager: Mapped[str] = mapped_column(String(16), default="")  # apt | apt-rpm | dnf | yum | zypper | apk
+    packages: Mapped[list] = mapped_column(JSON, default=list)
+    fixed_version: Mapped[str] = mapped_column(String(200), default="")
+    service: Mapped[str] = mapped_column(String(200), default="")
+    command: Mapped[list] = mapped_column(JSON, default=list)  # произвольная команда списком аргументов
+    window_id: Mapped[int | None] = mapped_column(
+        ForeignKey("maintenance_windows.id", ondelete="SET NULL"), nullable=True
+    )
+    canary_host: Mapped[str] = mapped_column(String(255), default="")
+    batch_percent: Mapped[int] = mapped_column(Integer, default=10)
+    failure_threshold: Mapped[int] = mapped_column(Integer, default=10)  # % ошибок, после которого стоп
+    status: Mapped[str] = mapped_column(String(24), default="draft")
+    error: Mapped[str] = mapped_column(Text, default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    prepared_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    dry_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dry_run_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Решение руководителя: утверждение (с разрешениями) или отказ — с комментарием.
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_note: Mapped[str] = mapped_column(Text, default="")
+    allow_reboot: Mapped[bool] = mapped_column(Boolean, default=False)
+    outside_window: Mapped[bool] = mapped_column(Boolean, default=False)
+    outside_window_reason: Mapped[str] = mapped_column(Text, default="")
+    custom_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stop_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    stopped_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    stop_reason: Mapped[str] = mapped_column(Text, default="")
+    job_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    verification_ids: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    hosts: Mapped[list["RolloutHost"]] = relationship(
+        back_populates="rollout", cascade="all, delete-orphan", order_by="RolloutHost.id"
+    )
+
+
+class RolloutHost(Base):
+    """Хост раскатки: этап (0 — канарейка, 1… — партии), итог, версии «до/после», перезагрузка."""
+
+    __tablename__ = "rollout_hosts"
+    __table_args__ = (UniqueConstraint("rollout_id", "host", name="uq_rollout_host"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rollout_id: Mapped[int] = mapped_column(ForeignKey("rollouts.id", ondelete="CASCADE"), index=True)
+    host: Mapped[str] = mapped_column(String(255))
+    stage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    reason: Mapped[str] = mapped_column(Text, default="")
+    credential_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ssh_credentials.id", ondelete="SET NULL"), nullable=True
+    )
+    credential_name: Mapped[str] = mapped_column(String(200), default="")
+    dry_status: Mapped[str] = mapped_column(String(16), default="")  # ok | failed
+    dry_plan: Mapped[list] = mapped_column(JSON, default=list)  # [{package, from, to}]
+    dry_note: Mapped[str] = mapped_column(Text, default="")
+    versions_before: Mapped[dict] = mapped_column(JSON, default=dict)
+    versions_after: Mapped[dict] = mapped_column(JSON, default=dict)
+    reboot_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    rebooted: Mapped[bool] = mapped_column(Boolean, default=False)
+    kernel_before: Mapped[str] = mapped_column(String(200), default="")
+    kernel_after: Mapped[str] = mapped_column(String(200), default="")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rollout: Mapped[Rollout] = relationship(back_populates="hosts")
+
+
+class RolloutStep(Base):
+    """Строка журнала раскатки: команда на хосте, код возврата, stdout/stderr и длительность."""
+
+    __tablename__ = "rollout_steps"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rollout_id: Mapped[int] = mapped_column(ForeignKey("rollouts.id", ondelete="CASCADE"), index=True)
+    rollout_host_id: Mapped[int] = mapped_column(ForeignKey("rollout_hosts.id", ondelete="CASCADE"), index=True)
+    phase: Mapped[str] = mapped_column(String(16))  # dry_run | execute
+    label: Mapped[str] = mapped_column(String(200))
+    command: Mapped[str] = mapped_column(Text, default="")
+    returncode: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    stdout: Mapped[str] = mapped_column(Text, default="")
+    stderr: Mapped[str] = mapped_column(Text, default="")
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
