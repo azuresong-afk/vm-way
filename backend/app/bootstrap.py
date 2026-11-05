@@ -1,6 +1,7 @@
 """Начальная настройка: первый администратор и демо-данные."""
 
 import logging
+import secrets
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -8,7 +9,18 @@ from sqlalchemy.orm import Session
 
 from app import audit
 from app.config import get_settings
-from app.models import AssignmentRule, MaintenanceWindow, Project, ScannerSource, SourceLink, Team, User
+from app.db import utcnow
+from app.models import (
+    AssignmentRule,
+    HostKey,
+    MaintenanceWindow,
+    Project,
+    ScannerSource,
+    SourceLink,
+    SshCredential,
+    Team,
+    User,
+)
 from app.security import hash_password
 
 log = logging.getLogger("vm.bootstrap")
@@ -141,6 +153,75 @@ def ensure_demo(db: Session) -> Project | None:
             )
         )
         db.flush()
+    _demo_ssh(db, pr.id)
     audit.record(db, None, "demo.seed", object_type="project", object_id=pr.id, project_id=pr.id)
     db.commit()
     return pr
+
+
+def _demo_ssh(db: Session, project_id: str) -> None:
+    """SSH-учётки и ключи хостов (задача 2.3): пароль для серверов и ключ для БД; ключи трёх
+    хостов закреплены, у web-03 ключ «изменился». Хостов демо в сети нет — проверка входа на демо-стенде
+    честно покажет «недоступен»; ключи сгенерированы здесь же."""
+    import asyncssh
+
+    from app.services import credentials
+
+    now = utcnow()
+    servers = SshCredential(
+        project_id=project_id,
+        name="Linux-серверы (deploy)",
+        username="deploy",
+        auth="password",
+        become="sudo",
+        hosts=["10.20.1.0/24", "10.20.3.0/24"],
+        note="Учётка выдана заказчиком на период работ, sudo без ограничений",
+        last_check_at=now,
+        last_check_host="10.20.1.11",
+        last_check_result="ok",
+        last_check_message="Вход выполнен",
+    )
+    db_key = asyncssh.generate_private_key("ssh-ed25519", comment="vm-demo")
+    databases = SshCredential(
+        project_id=project_id,
+        name="Базы данных (ключ)",
+        username="vm-patch",
+        auth="key",
+        become="sudo",
+        groups=["Базы данных"],
+        note="Ключ только для серверов БД, sudo NOPASSWD на apt и dnf",
+    )
+    db.add_all([servers, databases])
+    db.flush()
+    credentials.write_secrets(servers, {"password": secrets.token_urlsafe(18)})
+    pem = db_key.export_private_key("openssh").decode()
+    credentials.write_secrets(databases, {"private_key": pem})
+    databases.key_type, databases.key_fingerprint = db_key.get_algorithm(), db_key.get_fingerprint("sha256")
+
+    def _pub() -> tuple[str, str, str]:
+        k = asyncssh.generate_private_key("ssh-ed25519")
+        return k.get_algorithm(), k.get_fingerprint("sha256"), " ".join(k.export_public_key().decode().split()[:2])
+
+    for host in ("10.20.1.11", "10.20.1.12", "10.20.1.15", "10.20.1.13"):
+        kt, fp, pub = _pub()
+        hk = HostKey(
+            project_id=project_id,
+            host=host,
+            port=22,
+            key_type=kt,
+            fingerprint=fp,
+            public_key=pub,
+            pinned_at=now,
+            last_seen_at=now,
+        )
+        if host == "10.20.1.13":
+            kt2, fp2, pub2 = _pub()
+            hk.status, hk.mismatch_key_type, hk.mismatch_fingerprint, hk.mismatch_public_key = (
+                "mismatch",
+                kt2,
+                fp2,
+                pub2,
+            )
+            hk.mismatch_at, hk.mismatch_count = now, 1
+        db.add(hk)
+    db.flush()

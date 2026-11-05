@@ -5,6 +5,7 @@ import { useAuth, type Perm } from "./auth/AuthContext";
 import { ProjectProvider, useProject } from "./auth/ProjectContext";
 import { Layout } from "./components/Layout";
 import { Empty, ErrorAlert, Loading } from "./components/ui";
+import { AccessPage } from "./pages/AccessPage";
 import { AssetsPage } from "./pages/AssetsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MyTasksPage } from "./pages/MyTasksPage";
@@ -113,6 +114,7 @@ export function App() {
         <Route path="windows" element={work("view", <WindowsPage />)} />
         <Route path="assets" element={work("view", <AssetsPage />)} />
         <Route path="rules" element={work("view", <RulesPage />)} />
+        <Route path="access" element={work("view", <AccessPage />)} />
         <Route path="admin/users" element={<RequirePerm perm="users_manage"><UsersPage /></RequirePerm>} />
         <Route path="admin/projects" element={<RequirePerm perm="projects_manage"><ProjectsPage /></RequirePerm>} />
         <Route path="admin/sources" element={<RequirePerm perm="sources_manage"><SourcesPage /></RequirePerm>} />

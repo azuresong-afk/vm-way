@@ -24,6 +24,7 @@ export type Perm =
   | "verify"
   | "windows_manage"
   | "rules_manage"
+  | "credentials_manage"
   | "projects_manage"
   | "sources_manage"
   | "users_manage"
@@ -693,4 +694,89 @@ export interface RulesApplyOut {
   tickets: number;
   assigned: number;
   items: RuleDecision[];
+}
+
+// ---------- SSH-учётки и ключи хостов (задача 2.3) ----------
+
+export type SshAuth = "password" | "key";
+export type SshBecome = "sudo" | "none";
+export type SshCheckResult =
+  | "ok"
+  | "unreachable"
+  | "timeout"
+  | "auth_failed"
+  | "host_key_mismatch"
+  | "become_failed"
+  | "error";
+
+export interface SshCredentialIn {
+  name: string;
+  username: string;
+  auth: SshAuth;
+  port: number;
+  become: SshBecome;
+  /** Секреты только отправляются; пустая строка при правке — «не менять». */
+  password?: string;
+  private_key?: string;
+  passphrase?: string;
+  become_password?: string;
+  clear_become_password?: boolean;
+  hosts: string[];
+  groups: string[];
+  is_active: boolean;
+  note: string;
+}
+
+export interface SshCredentialOut {
+  id: number;
+  project_id: string;
+  name: string;
+  username: string;
+  auth: SshAuth;
+  port: number;
+  become: SshBecome;
+  key_type: string;
+  key_fingerprint: string;
+  has_secret: boolean;
+  has_become_password: boolean;
+  hosts: string[];
+  groups: string[];
+  is_active: boolean;
+  note: string;
+  last_check: { at: string; host: string; result: SshCheckResult; label: string; message: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HostKeyOut {
+  id: number;
+  host: string;
+  port: number;
+  key_type: string;
+  fingerprint: string;
+  status: "pinned" | "mismatch";
+  pinned_via: "tofu" | "accepted";
+  pinned_by: string | null;
+  pinned_at: string;
+  last_seen_at: string | null;
+  mismatch: { key_type: string; fingerprint: string; at: string; count: number } | null;
+}
+
+export interface SshHostOut {
+  host: string;
+  hostname: string;
+  groups: string[];
+  in_project: boolean;
+  credential: { id: number; name: string; username: string; port: number; why: "host" | "group" | "subnet" | "all"; detail: string } | null;
+  keys: HostKeyOut[];
+}
+
+export interface SshCheckOut {
+  result: SshCheckResult;
+  label: string;
+  message: string;
+  ok: boolean;
+  facts: { user?: string; uid?: number; os?: string; become?: "root" | "sudo" | "none" | "failed" };
+  key_state: "new" | "pinned" | "mismatch";
+  host_key: HostKeyOut | null;
 }

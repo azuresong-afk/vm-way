@@ -7,4 +7,7 @@ alembic==1.15.2
 psycopg[binary]==3.2.9
 httpx==0.28.1
 cryptography==44.0.3
+asyncssh==2.21.0
+# Зашифрованные парольной фразой ключи OpenSSH (KDF bcrypt).
+bcrypt==4.3.0
 tzdata==2025.2

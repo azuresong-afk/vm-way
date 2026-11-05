@@ -43,6 +43,11 @@ import type {
   VerificationOut,
   VulnOut,
   CalendarItem,
+  HostKeyOut,
+  SshCheckOut,
+  SshCredentialIn,
+  SshCredentialOut,
+  SshHostOut,
   WindowIn,
   WindowOut,
   WindowPlanOut,
@@ -233,6 +238,16 @@ export const api = {
     json<RuleOut[]>(`/projects/${enc(projectId)}/rules/order`, { method: "PUT", ...body({ ids }) }),
   applyRules: (projectId: string, dryRun: boolean) =>
     json<RulesApplyOut>(`/projects/${enc(projectId)}/rules/apply`, post({ dry_run: dryRun })),
+  sshCredentials: (projectId: string) => json<SshCredentialOut[]>(`/projects/${enc(projectId)}/ssh-credentials`),
+  createSshCredential: (projectId: string, data: SshCredentialIn) =>
+    json<SshCredentialOut>(`/projects/${enc(projectId)}/ssh-credentials`, post(data)),
+  updateSshCredential: (id: number, data: Partial<SshCredentialIn>) =>
+    json<SshCredentialOut>(`/ssh-credentials/${id}`, { method: "PATCH", ...body(data) }),
+  deleteSshCredential: (id: number) => json<void>(`/ssh-credentials/${id}`, { method: "DELETE" }),
+  checkSshCredential: (id: number, host: string) => json<SshCheckOut>(`/ssh-credentials/${id}/check`, post({ host })),
+  sshHosts: (projectId: string) => json<SshHostOut[]>(`/projects/${enc(projectId)}/ssh-hosts`),
+  acceptHostKey: (id: number, reason: string) => json<HostKeyOut>(`/host-keys/${id}/accept`, post({ reason })),
+  resetHostKey: (id: number, reason: string) => json<void>(`/host-keys/${id}/reset`, post({ reason })),
   teams: () => json<TeamOut[]>("/teams"),
   createTeam: (data: { name: string; member_ids: number[] }) => json<TeamOut>("/teams", post(data)),
   updateTeam: (id: number, data: { name?: string; member_ids?: number[] }) =>

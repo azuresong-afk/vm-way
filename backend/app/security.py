@@ -78,16 +78,22 @@ def _aes_key() -> bytes:
     return key
 
 
-def encrypt_secret(plain: str) -> str:
+def _aad(context: str) -> bytes:
+    # Контекст (например, «ssh-credential:42») привязывает шифротекст к записи: секрет, переставленный
+    # в другую строку БД, не расшифруется.
+    return b"vm-secret" + (b":" + context.encode() if context else b"")
+
+
+def encrypt_secret(plain: str, context: str = "") -> str:
     nonce = os.urandom(12)
-    ct = AESGCM(_aes_key()).encrypt(nonce, plain.encode(), b"vm-secret")
+    ct = AESGCM(_aes_key()).encrypt(nonce, plain.encode(), _aad(context))
     return "v1:" + base64.b64encode(nonce + ct).decode()
 
 
-def decrypt_secret(stored: str | None) -> str:
+def decrypt_secret(stored: str | None, context: str = "") -> str:
     if not stored:
         return ""
     if not stored.startswith("v1:"):
         raise ValueError("неизвестный формат секрета")
     raw = base64.b64decode(stored[3:])
-    return AESGCM(_aes_key()).decrypt(raw[:12], raw[12:], b"vm-secret").decode()
+    return AESGCM(_aes_key()).decrypt(raw[:12], raw[12:], _aad(context)).decode()
