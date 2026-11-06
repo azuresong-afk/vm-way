@@ -1067,3 +1067,107 @@ export interface ExceptionMeta {
 }
 
 export type ExceptionCounts = Record<ExceptionState | ExceptionKind, number>;
+
+/* --- Отчёт о ходе устранения (задача 3.1) --- */
+
+export type ReportFormat = "html" | "pdf" | "docx" | "json";
+export type ReportVariant = "full" | "brief";
+
+export interface ReportQuery {
+  from: string;
+  to: string;
+  variant: ReportVariant;
+}
+
+export interface ReportMove {
+  start: number;
+  appeared: number;
+  regression: number;
+  fixed: number;
+  end: number;
+}
+
+export interface ReportTicket {
+  id: number;
+  title: string;
+  kind: string;
+  kind_label: string;
+  os: string;
+  severity: Severity;
+  status: TicketStatus;
+  status_label: string;
+  assignee: string | null;
+  is_regression: boolean;
+  hosts: number;
+  hosts_confirmed: number;
+  hosts_unverified: number;
+  open_vulns: number;
+  fixed_vulns: number;
+  closed_at: string | null;
+  closed_local: string;
+  evidence?: { scanner_run_id: number | null; run_name: string; kind: string; finished_at: string | null; url: string };
+}
+
+export interface ReportOut {
+  context: {
+    title: string;
+    project: { id: string; name: string; client: string; contract_ref: string };
+    period: { from: string; to: string; days: number; timezone: string; label: string };
+    variant: ReportVariant;
+    generated_at: string;
+    author: string;
+    deadlines: boolean;
+    tickets_as_of_now: boolean;
+  };
+  totals: {
+    vulns: ReportMove;
+    tickets_total: number;
+    tickets_open: number;
+    tickets_verified: number;
+    tickets_exceptions: number;
+    hosts_unverified: number;
+  };
+  by_severity: (ReportMove & { severity: Severity; label: string })[];
+  weeks: { start: string; opened: SevCounts; closed: SevCounts }[];
+  runs: {
+    id: number;
+    scanner_run_id: number;
+    name: string;
+    kind: string;
+    kind_label: string;
+    finished_at: string | null;
+    finished_local: string;
+    url: string;
+    appeared: number;
+    regression: number;
+    fixed: number;
+  }[];
+  assignees: {
+    name: string;
+    open: number;
+    in_work: number;
+    awaiting_check: number;
+    verified: number;
+    open_vulns: number;
+    fixed_vulns: number;
+    by_severity: SevCounts;
+  }[];
+  groups: (ReportMove & { name: string; hosts: number })[];
+  top_hosts: { host: string; open: number; by_severity: SevCounts }[];
+  verified: ReportTicket[];
+  remaining: ReportTicket[];
+  exceptions: {
+    id: number;
+    ticket_id: number;
+    ticket_title: string;
+    severity: Severity;
+    kind: ExceptionKind;
+    kind_label: string;
+    reason: string;
+    approver: string;
+    review_on: string | null;
+    review_local: string;
+    vulns: number;
+  }[];
+  key_points: string[];
+}

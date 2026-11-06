@@ -28,6 +28,8 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
+      - name: Pango и шрифты для PDF-отчётов (WeasyPrint)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 fonts-dejavu-core
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: ruff format --check .
