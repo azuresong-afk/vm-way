@@ -10,6 +10,7 @@ import { AssetsPage } from "./pages/AssetsPage";
 import { ExceptionsPage } from "./pages/ExceptionsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MyTasksPage } from "./pages/MyTasksPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { RolloutPage } from "./pages/RolloutPage";
 import { RolloutsPage } from "./pages/RolloutsPage";
 import { RulesPage } from "./pages/RulesPage";
@@ -118,6 +119,7 @@ export function App() {
         <Route path="rollouts" element={work("view", <RolloutsPage />)} />
         <Route path="rollouts/:id" element={<RequirePerm perm="view"><RolloutPage /></RequirePerm>} />
         <Route path="exceptions" element={work("view", <ExceptionsPage />)} />
+        <Route path="reports" element={work("view", <ReportsPage />)} />
         <Route path="assets" element={work("view", <AssetsPage />)} />
         <Route path="rules" element={work("view", <RulesPage />)} />
         <Route path="access" element={work("view", <AccessPage />)} />

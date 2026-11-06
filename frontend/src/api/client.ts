@@ -62,6 +62,9 @@ import type {
   RolloutMeta,
   RolloutOut,
   RolloutStepOut,
+  ReportFormat,
+  ReportOut,
+  ReportQuery,
 } from "./types";
 
 export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
@@ -329,6 +332,15 @@ export const api = {
   createLink: (projectId: string, sourceId: number, engagementId: number) =>
     json<LinkOut>(`/projects/${enc(projectId)}/links`, post({ source_id: sourceId, engagement_id: engagementId })),
   deleteLink: (id: number) => json<void>(`/links/${id}`, { method: "DELETE" }),
+
+  report: (projectId: string, q: ReportQuery) =>
+    json<ReportOut>(`/projects/${enc(projectId)}/report${listQuery({ ...q, format: "json", download: 0 })}`),
+  /** Файл отчёта (в журнал аудита — как выгрузка). Имя файла — из Content-Disposition ответа. */
+  reportFile: async (projectId: string, q: ReportQuery, format: ReportFormat): Promise<{ blob: Blob; name: string }> => {
+    const res = await request(`/projects/${enc(projectId)}/report${listQuery({ ...q, format })}`);
+    const m = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "");
+    return { blob: await res.blob(), name: m ? m[1] : `vm-report.${format}` };
+  },
 
   audit: (f: AuditFilters) => page<AuditOut>(`/audit${listQuery(f)}`),
   auditExport: async (f: AuditFilters): Promise<Blob> => {

@@ -14,6 +14,7 @@ from app.api import (
     exceptions,
     meta,
     projects,
+    reports,
     rollouts,
     rules,
     sources,
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
         rollouts.router,
         exceptions.router,
         summary.router,
+        reports.router,
         audit_log.router,
     ):
         app.include_router(r)

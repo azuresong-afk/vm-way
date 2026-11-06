@@ -974,3 +974,20 @@ a.kpi-mini:hover { color: var(--accent-text); text-decoration: none; }
 /* Исключения (задача 2.5) */
 .clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .nav-link .count { margin-left: auto; }
+
+/* Отчёты (задача 3.1) */
+.report-params { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s2) var(--s3); }
+.report-dates { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.report-dates .input { width: 160px; }
+.report-formats { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.report-points { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.report-points li { position: relative; padding: 8px 0 8px 18px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.report-points li:last-child { border-bottom: none; }
+.report-points li::before { content: ""; position: absolute; left: 2px; top: 15px; width: 6px; height: 6px; border-radius: var(--radius-sm); background: var(--accent); }
+.report-preview-title { display: flex; align-items: center; gap: 8px; margin-top: var(--s2); }
+.report-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.is-stale { opacity: .6; transition: opacity .15s; }
+@media (max-width: 480px) {
+  .report-dates .input { width: 100%; }
+  .report-dates, .report-dates .field { flex: 1 1 140px; }
+}
