@@ -10,10 +10,11 @@
 3. Цели, отклонённые allowlist «Сканера», получают «не проверено: вне allowlist».
 
 Номер прогона «Сканера» сохраняется сразу после запуска: после рестарта задача не запускает
-второй прогон, а продолжает ждать первый.
+второй прогон, а продолжает ждать первый. Ожидание не занимает поток пула: пока прогон идёт, задача
+откладывает сама себя (`jobs.Defer`) и планировщик вызывает её снова через `VM_VERIFY_POLL_SECONDS`.
+Временная ошибка «Сканера» повторяется (app/jobs.py); окончательная переводит проверку в «не выполнена».
 """
 
-import time
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -285,7 +286,10 @@ def _fail(db: Session, v: Verification, message: str) -> None:
     )
 
 
-def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
+def execute(db: Session, verification_id: int) -> dict:
+    """Один шаг проверки: запустить прогон, если ещё не запущен, и, если он завершён, импортировать.
+
+    Пока прогон идёт, бросает `jobs.Defer` — задача `verify` вызовет шаг снова, не занимая поток."""
     s = get_settings()
     v = db.get(Verification, verification_id)
     if v is None:
@@ -324,8 +328,7 @@ def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
                 _finish(db, v, hosts, None)
                 db.commit()
                 return verification_out(v)
-            _fail(db, v, str(e))
-            db.commit()
+            # Временную ошибку задача повторит; окончательную доведёт до статуса failed_job().
             raise
         v.scanner_run_id = int(created["id"])
         v.denied_targets = created.get("denied_targets") or []
@@ -333,17 +336,15 @@ def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
         _mark_denied(db, v, v.denied_targets)
         db.commit()
 
-    # Ждём завершения прогона.
-    deadline = as_utc(v.created_at) + timedelta(minutes=s.verify_timeout_minutes)
-    while True:
-        meta = client.run(v.scanner_run_id)
-        if meta["status"] in FINISHED_STATUSES:
-            break
+    # Прогон ещё идёт — не ждём в потоке: задача вернётся сюда через verify_poll_seconds.
+    meta = client.run(v.scanner_run_id)
+    if meta["status"] not in FINISHED_STATUSES:
+        deadline = as_utc(v.created_at) + timedelta(minutes=s.verify_timeout_minutes)
         if utcnow() > deadline:
             _fail(db, v, f"прогон №{v.scanner_run_id} не завершился за {s.verify_timeout_minutes} мин")
             db.commit()
             return verification_out(v)
-        sleep(s.verify_poll_seconds)
+        raise jobs.Defer(s.verify_poll_seconds)
 
     actor = db.get(User, v.requested_by) if v.requested_by else None
     denied = {str(d.get("target")) for d in v.denied_targets}
@@ -371,7 +372,14 @@ def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
     return verification_out(v)
 
 
-@jobs.handler("verify")
+def failed_job(db: Session, job: Job, e: Exception) -> None:
+    """Задача проверки провалилась окончательно — проверка не остаётся висеть в «идёт»."""
+    v = db.get(Verification, int(job.payload["verification_id"]))
+    if v is not None and v.status in ACTIVE:
+        _fail(db, v, jobs.safe_error(e))
+
+
+@jobs.handler("verify", on_failed=failed_job)
 def _job_verify(db: Session, job: Job) -> dict:
     out = execute(db, int(job.payload["verification_id"]))
     return {"verification_id": out["id"], "status": out["status"], "scanner_run_id": out["scanner_run_id"]}

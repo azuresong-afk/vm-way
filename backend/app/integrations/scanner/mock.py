@@ -400,6 +400,9 @@ class MockScanner:
             "options": {"no_ping": False, "profile": body.get("profile")},
             "warnings": [],
             "progress": {"stage": "vuln", "percent": 10, "hosts_done": 0, "hosts_total": len(accepted)},
+            "node_id": None,
+            "node_name": None,
+            "node_mode": None,
         }
         with self._lock:
             self._runs[run_id] = {

@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     encryption_key: str = ""
     token_ttl_minutes: int = 480
     auth_mode: str = "local"  # local | platform (этап 3)
+    # Защита от перебора пароля: сколько неудачных входов за окно допускается для пары
+    # «учётная запись + адрес», для одного адреса (любые имена) и для учётной записи (любые адреса).
+    login_window_minutes: int = 15
+    login_max_failures: int = 5
+    login_max_failures_ip: int = 30
+    login_max_failures_account: int = 20
     product_version: str = "0.1.0"
     # Базовый адрес веб-интерфейса «Сканера» для ссылок «Открыть в Сканере».
     scanner_web_url: str = ""
@@ -25,7 +31,17 @@ class Settings(BaseSettings):
     demo_password: str = ""
     # Источники mock:// (встроенный мок «Сканера»): только для демо-стенда и тестов.
     allow_mock_sources: bool = False
+    # Пул коротких задач (импорт, опрос, шаги повторных проверок) и пул долгих (раскатки).
     jobs_workers: int = 4
+    jobs_long_workers: int = 4
+    # Как часто планировщик запускает задачи, у которых подошёл срок.
+    jobs_tick_seconds: float = 1.0
+    # Пауза перед первым повтором после временной ошибки; каждый следующий — вчетверо дольше.
+    jobs_retry_seconds: float = 30.0
+    # Сроки хранения, дней (0 — не чистить): завершённые задачи, доставленные и недоставленные события outbox.
+    jobs_retention_days: int = 30
+    outbox_retention_days: int = 30
+    outbox_undelivered_retention_days: int = 90
     # Задачи исполняются сразу в запросе (тесты).
     jobs_inline: bool = False
     poll_enabled: bool = True

@@ -24,7 +24,7 @@ scripts/gen-env.sh --demo && docker compose up --build -d
 
 | Документ | О чём |
 |---|---|
-| [docs/INSTALL.md](docs/INSTALL.md) | установка, `.env`, подключение «Сканера», обновление, резервное копирование и восстановление, частые проблемы |
+| [docs/INSTALL.md](docs/INSTALL.md) | установка, `.env`, HTTPS, подключение «Сканера», обновление, резервное копирование и восстановление, частые проблемы |
 | [docs/TESTING.md](docs/TESTING.md) | пошаговая ручная проверка на демо-стенде с ожидаемым результатом по каждому шагу |
 | [docs/roadmap.md](docs/roadmap.md) | архитектура, модель данных, API, решения и план по задачам |
 
@@ -54,8 +54,9 @@ cd backend
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 ruff check . && ruff format --check . && pytest -q
-# Миграции на PostgreSQL (необязательно):
-VM_TEST_PG_URL=postgresql+psycopg://vm:vm@127.0.0.1:5432/vm pytest -q tests/test_migrations.py
+# Все тесты на PostgreSQL (необязательно; так же идёт CI). Нужна отдельная пустая база:
+# схема public в ней пересоздаётся перед каждым тестом.
+VM_TEST_ON_PG=1 VM_TEST_PG_URL=postgresql+psycopg://vm:vm@127.0.0.1:5432/vm_test pytest -q
 ```
 
 Демо-фикстура «Сканера» генерируется скриптом и проверяется в CI на совпадение:
@@ -73,4 +74,4 @@ npm run lint && npm run typecheck && npm test
 npm run dev   # http://localhost:5174, /api проксируется на API :8000 (VM_API_URL)
 ```
 
-Запуск API без Docker — [docs/INSTALL.md, раздел 10](docs/INSTALL.md#10-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов, проверка всего стека `docker compose up` и сквозной тест интерфейса на Playwright (`e2e/`, см. [docs/TESTING.md](docs/TESTING.md#сквозной-тест-интерфейса)).
+Запуск API без Docker — [docs/INSTALL.md, раздел 11](docs/INSTALL.md#11-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов, проверка всего стека `docker compose up` и сквозной тест интерфейса на Playwright (`e2e/`, см. [docs/TESTING.md](docs/TESTING.md#сквозной-тест-интерфейса)).

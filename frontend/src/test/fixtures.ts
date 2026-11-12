@@ -13,7 +13,7 @@ export const project: ProjectOut = {
 };
 
 export function me(roles: string[], permissions: MeOut["permissions"]): MeOut {
-  return { id: 7, username: "eng", display_name: "Смирнов Д. В.", roles, role_labels: [], permissions, projects: ["*"] };
+  return { id: 7, username: "eng", display_name: "Смирнов Д. В.", roles, role_labels: [], permissions, projects: ["*"], must_change_password: false, can_change_password: true };
 }
 
 export const engineer = me(["engineer"], ["view", "import", "ticket_work", "verify"]);
