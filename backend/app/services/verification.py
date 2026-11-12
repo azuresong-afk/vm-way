@@ -15,8 +15,6 @@
 Временная ошибка «Сканера» повторяется (app/jobs.py); окончательная переводит проверку в «не выполнена».
 
 Проверка не остаётся «в работе» навсегда:
-- сбой связи со «Сканером» при опросе идущего прогона не тратит попытки задачи — она ждёт дальше
-  до общего срока (`verify_timeout_minutes`), затем проверка получает статус `failed` с причиной;
 - окончательный сбой задачи переводит проверку в `failed` (`failed_job`), сверка при старте службы
   делает то же для проверок, чья задача уже не исполняется (`fail_orphaned`);
 - проверку можно отменить (`cancel`): статус `cancelled`, прогон «Сканера» останавливается.
@@ -383,20 +381,11 @@ def execute(db: Session, verification_id: int) -> dict:
         db.commit()
 
     # Прогон ещё идёт — не ждём в потоке: задача вернётся сюда через verify_poll_seconds.
-    trouble = ""
-    try:
-        meta = client.run(v.scanner_run_id)
-    except ScannerError as e:
-        if not e.transient:
-            raise
-        # Сбой связи — не повод ронять проверку: «Сканер» мог перезапускаться. Ждём до общего срока.
-        meta, trouble = None, str(e)
-        log.warning("Проверка %s: прогон %s пока не получен: %s", v.id, v.scanner_run_id, e)
-    if meta is None or meta["status"] not in FINISHED_STATUSES:
+    meta = client.run(v.scanner_run_id)
+    if meta["status"] not in FINISHED_STATUSES:
         deadline = as_utc(v.created_at) + timedelta(minutes=s.verify_timeout_minutes)
         if utcnow() > deadline:
-            message = f"прогон №{v.scanner_run_id} не завершился за {s.verify_timeout_minutes} мин"
-            _fail(db, v, f"{message}; последняя ошибка: {trouble}" if trouble else message)
+            _fail(db, v, f"прогон №{v.scanner_run_id} не завершился за {s.verify_timeout_minutes} мин")
             db.commit()
             return verification_out(v)
         raise jobs.Defer(s.verify_poll_seconds)

@@ -5,7 +5,6 @@ import pytest
 from sqlalchemy import func, select
 
 from app import jobs
-from app.config import get_settings
 from app.integrations.scanner import MockScanner
 from app.models import (
     AuditLog,
@@ -340,40 +339,6 @@ def _job(db, v: dict | Verification) -> Job:
     result = v["result"] if isinstance(v, dict) else v.result
     db.expire_all()
     return db.get(Job, result["job_id"])
-
-
-def test_scanner_outage_during_wait_is_survived(client, as_, db, users, project, monkeypatch):
-    _import(client, as_, project["id"])
-    t = _ticket(db, SSL_DEB)
-    # Клиент повторяет запрос трижды: 7 сбоев — это два неудачных опроса подряд и ещё один сбой.
-    left = _outage(monkeypatch, 7)
-    r = _start(client, as_, users, t.id)
-    assert r.status_code == 202, r.text
-    [v] = r.json()["verifications"]
-    assert left["n"] == 0
-    assert v["status"] == "done" and v["result"]["outcome"] == "verified"
-    assert _job(db, v).status == "done"
-    assert r.json()["ticket"]["status"] == "verified"
-
-
-def test_outage_until_deadline_gives_final_status(client, as_, db, users, project, monkeypatch):
-    _import(client, as_, project["id"])
-    t = _ticket(db, SSL_DEB)
-    _outage(monkeypatch, 10**6)
-    monkeypatch.setattr(get_settings(), "verify_timeout_minutes", 0)
-    r = _start(client, as_, users, t.id)
-    assert r.status_code == 202, r.text
-    [v] = r.json()["verifications"]
-    assert v["status"] == "failed" and v["finished_at"]
-    assert "не завершился за 0 мин" in v["error"] and "HTTP 503" in v["error"]
-    assert r.json()["ticket"]["status"] == "fixed"
-    card = client.get(f"/tickets/{t.id}", headers=as_("engineer")).json()
-    assert card["can"]["verify"] is True
-    assert "Повторная проверка не выполнена" in db.scalars(select(Comment.body).order_by(Comment.id.desc())).first()
-    # Зависшей проверки нет — новую можно запустить.
-    monkeypatch.undo()
-    r2 = client.post(f"/tickets/{t.id}/verify", headers=as_("engineer"), json={})
-    assert r2.status_code == 202 and r2.json()["verifications"][0]["status"] == "done"
 
 
 def test_permanent_scanner_error_fails_at_once(client, as_, db, users, project, monkeypatch):
