@@ -142,3 +142,33 @@ def test_legacy_exceptions_migrated(tmp_path):
     assert rows[0].reason == "Сервер выводится" and rows[0].approver_id == uid and rows[0].prev_status == "in_progress"
     assert str(rows[0].review_on) == str(date.today() + timedelta(days=90)) and "10.0.0.5" in rows[0].hosts
     assert rows[1].review_on is None and "не сохранилась" in rows[1].reason
+
+
+def test_database_stamped_with_former_login_0007_is_repaired(tmp_path):
+    """Миграция входа сначала вышла как 0007 — одновременно с 0007 фоновых задач. База, обновлённая
+    той версией, помечена «0007» без изменений фоновых задач: 0008 доводит её до общей схемы."""
+    url = f"sqlite:///{tmp_path / 'forked.db'}"
+    cfg = _cfg(url)
+    command.upgrade(cfg, "0006")
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        # то, что делала прежняя 0007_login_hardening
+        for sql in (
+            "CREATE TABLE login_failures (id INTEGER NOT NULL PRIMARY KEY, username VARCHAR(64) NOT NULL, "
+            "ip VARCHAR(64) NOT NULL, at BIGINT NOT NULL)",
+            "CREATE INDEX ix_login_failures_username ON login_failures (username)",
+            "CREATE INDEX ix_login_failures_ip ON login_failures (ip)",
+            "CREATE TABLE revoked_tokens (jti VARCHAR(32) NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, "
+            "expires_at BIGINT NOT NULL)",
+            "ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0",
+        ):
+            conn.execute(text(sql))
+        conn.execute(text("INSERT INTO revoked_tokens VALUES ('kept', 1, 0)"))
+        conn.execute(text("UPDATE alembic_version SET version_num = '0007'"))
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        assert compare_metadata(MigrationContext.configure(conn), Base.metadata) == []
+        assert conn.execute(text("SELECT jti FROM revoked_tokens")).scalars().all() == ["kept"]
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0008"
+    command.downgrade(cfg, "base")
+    assert set(inspect(engine).get_table_names()) <= {"alembic_version"}
