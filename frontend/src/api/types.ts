@@ -53,6 +53,10 @@ export interface MeOut {
   role_labels: string[];
   permissions: Perm[];
   projects: string[];
+  /** Пароль выдан администратором: до смены доступна только смена пароля. */
+  must_change_password: boolean;
+  /** Пароль хранится в «Устранении» (локальный вход), его можно сменить самому. */
+  can_change_password: boolean;
 }
 
 export interface ProjectOut {
@@ -402,6 +406,7 @@ export interface UserOut {
   roles: string[];
   extra_perms: string[];
   is_active: boolean;
+  must_change_password: boolean;
   created_at: string;
 }
 
