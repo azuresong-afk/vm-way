@@ -114,6 +114,19 @@ def login(client: TestClient, username: str) -> dict:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+def first_login(client: TestClient, username: str, password: str) -> dict:
+    """Вход пользователя, созданного администратором: выданный пароль сразу меняется на свой."""
+    r = client.post("/auth/token", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    r = client.post(
+        "/me/password",
+        headers={"Authorization": f"Bearer {r.json()['access_token']}"},
+        json={"current_password": password, "new_password": PASSWORD},
+    )
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
 @pytest.fixture()
 def as_(client, users):
     cache: dict[str, dict] = {}

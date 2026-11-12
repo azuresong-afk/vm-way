@@ -36,6 +36,7 @@ def user_out(u: User) -> dict:
         "roles": u.roles,
         "extra_perms": u.extra_perms,
         "is_active": u.is_active,
+        "must_change_password": u.must_change_password,
         "created_at": u.created_at,
     }
 
@@ -135,6 +136,8 @@ def create_user(
         password_hash=hash_password(body.password),
         roles=body.roles,
         extra_perms=body.extra_perms,
+        # Пароль знает администратор — при первом входе пользователь задаёт свой.
+        must_change_password=True,
     )
     db.add(u)
     db.flush()
@@ -187,6 +190,8 @@ def set_password(
         raise not_found("Пользователь")
     u.password_hash = hash_password(body.password)
     u.token_version += 1  # старые сессии перестают действовать
+    # После сброса пароль знает администратор — пользователь меняет его при первом входе.
+    u.must_change_password = u.id != p.user.id
     audit.record(db, p.user, "user.password_reset", object_type="user", object_id=u.id, ip=p.ip)
     db.commit()
     return {"ok": True}
