@@ -24,7 +24,7 @@ scripts/gen-env.sh --demo && docker compose up --build -d
 
 | Документ | О чём |
 |---|---|
-| [docs/INSTALL.md](docs/INSTALL.md) | установка, `.env`, подключение «Сканера», обновление, резервное копирование и восстановление, частые проблемы |
+| [docs/INSTALL.md](docs/INSTALL.md) | установка, `.env`, HTTPS, подключение «Сканера», обновление, резервное копирование и восстановление, частые проблемы |
 | [docs/TESTING.md](docs/TESTING.md) | пошаговая ручная проверка на демо-стенде с ожидаемым результатом по каждому шагу |
 | [docs/roadmap.md](docs/roadmap.md) | архитектура, модель данных, API, решения и план по задачам |
 
@@ -73,4 +73,4 @@ npm run lint && npm run typecheck && npm test
 npm run dev   # http://localhost:5174, /api проксируется на API :8000 (VM_API_URL)
 ```
 
-Запуск API без Docker — [docs/INSTALL.md, раздел 10](docs/INSTALL.md#10-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов и проверка всего стека `docker compose up`.
+Запуск API без Docker — [docs/INSTALL.md, раздел 11](docs/INSTALL.md#11-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов и проверка всего стека `docker compose up`.

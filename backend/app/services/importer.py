@@ -17,7 +17,7 @@ from app import audit, jobs
 from app.db import as_utc, utcnow
 from app.integrations.scanner import FINISHED_STATUSES, ScannerClient, ScannerError, make_client
 from app.models import Job, Project, RunCoverage, ScannerSource, ScanRun, SourceLink, User, Verification
-from app.security import decrypt_secret
+from app.services import source_secrets
 
 log = logging.getLogger("vm.import")
 
@@ -26,7 +26,7 @@ POLL_WINDOW = 20
 
 
 def client_for(source: ScannerSource) -> ScannerClient:
-    return make_client(source.base_url, source.username, decrypt_secret(source.secret_enc), source.verify_tls)
+    return make_client(source.base_url, source.username, source_secrets.read_password(source), source.verify_tls)
 
 
 def _dt(value: str | None) -> datetime | None:
