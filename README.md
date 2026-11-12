@@ -74,4 +74,4 @@ npm run lint && npm run typecheck && npm test
 npm run dev   # http://localhost:5174, /api проксируется на API :8000 (VM_API_URL)
 ```
 
-Запуск API без Docker — [docs/INSTALL.md, раздел 11](docs/INSTALL.md#11-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов и проверка всего стека `docker compose up`.
+Запуск API без Docker — [docs/INSTALL.md, раздел 11](docs/INSTALL.md#11-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов, проверка всего стека `docker compose up` и сквозной тест интерфейса на Playwright (`e2e/`, см. [docs/TESTING.md](docs/TESTING.md#сквозной-тест-интерфейса)).
