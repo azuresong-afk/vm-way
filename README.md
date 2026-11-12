@@ -73,4 +73,4 @@ npm run lint && npm run typecheck && npm test
 npm run dev   # http://localhost:5174, /api проксируется на API :8000 (VM_API_URL)
 ```
 
-Запуск API без Docker — [docs/INSTALL.md, раздел 10](docs/INSTALL.md#10-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов и проверка всего стека `docker compose up`.
+Запуск API без Docker — [docs/INSTALL.md, раздел 10](docs/INSTALL.md#10-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов и проверка всего стека `docker compose up`. Отдельно (`.github/workflows/audit.yml`, на PR, в main и раз в неделю): `pip-audit` по закреплённым версиям и `npm audit` по зависимостям сборки; обновления предлагает Dependabot (`.github/dependabot.yml`).
