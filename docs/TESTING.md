@@ -259,7 +259,7 @@ CI (GitHub Actions, `.github/workflows/ci.yml`) на каждый PR:
 
 - **backend** — `ruff check`, `ruff format --check`, совпадение демо-фикстуры с генератором, `pytest` дважды: на SQLite и целиком на PostgreSQL 16 (`VM_TEST_ON_PG=1`), включая миграции и тесты параллельного импорта;
 - **frontend** — ESLint, `tsc --noEmit`, vitest, сборка Vite;
-- **compose** — сборка образов `app` и `web`, `docker compose up --wait` с демо-данными, `scripts/smoke.sh`, копия и восстановление, повторный smoke.
+- **compose** — сборка образов `app` и `web`, `docker compose up --wait` с демо-данными, `scripts/smoke.sh`, копия и восстановление, повторный smoke, затем сквозной тест интерфейса.
 
 Локально:
 
@@ -267,3 +267,17 @@ CI (GitHub Actions, `.github/workflows/ci.yml`) на каждый PR:
 cd backend && ruff check . && ruff format --check . && pytest -q
 cd frontend && npm run lint && npm run typecheck && npm test
 ```
+
+### Сквозной тест интерфейса
+
+`e2e/` — тест на Playwright, который проходит в браузере главный сценарий на демо-стенде: вход, повторный импорт без дублей, поиск заявки и взятие в работу, раскатка (подготовка, пробный прогон, утверждение руководителем, запуск исполнителем, автоматическая проверка и закрытие заявки) и ручная повторная проверка с частичным результатом (шаги 3–7 и 14 этого файла).
+
+Тест меняет данные, поэтому нужен чистый демо-стенд:
+
+```bash
+docker compose down -v && docker compose up --build -d   # .env — от scripts/gen-env.sh --demo
+cd e2e && npm ci && npx playwright install chromium
+npx playwright test                                        # пароль берётся из VM_DEMO_PASSWORD в .env
+```
+
+Другой адрес или пароль — переменные `E2E_BASE_URL` (по умолчанию `http://127.0.0.1:18081`) и `E2E_DEMO_PASSWORD`; для стенда без Docker (раздел 11 в INSTALL.md) — `E2E_BASE_URL=http://127.0.0.1:5174`. При падении трасса и снимок экрана лежат в `e2e/test-results/`, в CI — в артефакте `playwright-report`.

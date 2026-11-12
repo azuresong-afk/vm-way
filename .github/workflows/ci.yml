@@ -83,6 +83,23 @@ jobs:
           scripts/restore.sh backups/ci --yes
           docker compose up -d --wait --wait-timeout 300
           scripts/smoke.sh
+      # Сквозной тест интерфейса (e2e/): вход, импорт, заявка, раскатка, повторная проверка.
+      - name: Сквозной тест интерфейса (Playwright)
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - name: Отчёт Playwright при ошибке
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Логи при ошибке
         if: failure()
         run: docker compose logs --no-color --tail 200
