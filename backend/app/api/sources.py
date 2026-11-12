@@ -86,6 +86,7 @@ def job_out(j: Job) -> dict:
         "created_at": j.created_at,
         "started_at": j.started_at,
         "finished_at": j.finished_at,
+        "run_after": j.run_after,
     }
 
 

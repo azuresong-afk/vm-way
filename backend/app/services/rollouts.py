@@ -1186,12 +1186,12 @@ def _finish(db: Session, r: Rollout, final: str, error: str) -> dict:
     return rollout_brief(r)
 
 
-@jobs.handler("rollout_dry_run")
+@jobs.handler("rollout_dry_run", pool="long", retry=False)
 def _job_dry_run(db: Session, job: Job) -> dict:
     return execute_dry_run(db, int(job.payload["rollout_id"]))
 
 
-@jobs.handler("rollout")
+@jobs.handler("rollout", pool="long", retry=False)
 def _job_rollout(db: Session, job: Job) -> dict:
     return execute(db, int(job.payload["rollout_id"]))
 
