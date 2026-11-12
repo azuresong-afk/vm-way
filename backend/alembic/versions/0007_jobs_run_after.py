@@ -1,15 +1,15 @@
 """Фоновые задачи: срок «не раньше» для отложенных вызовов и повторов, индекс для очистки outbox.
 
-Revision ID: 0008
-Revises: 0007
+Revision ID: 0007
+Revises: 0006
 Create Date: 2026-11-12 08:30:00
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0008"
-down_revision = "0007"
+revision = "0007"
+down_revision = "0006"
 branch_labels = None
 depends_on = None
 
