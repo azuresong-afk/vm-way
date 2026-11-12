@@ -678,6 +678,9 @@ def build_run(run: dict) -> dict:
         "options": {"no_ping": False, "profile": None},
         "warnings": warnings,
         "progress": {"stage": "done", "percent": 100, "hosts_done": len(HOSTS), "hosts_total": len(HOSTS)},
+        "node_id": None,
+        "node_name": None,
+        "node_mode": None,
     }
     return {"run": meta, "findings": findings, "fixes": fixes, "coverage_entries": entries}
 
@@ -734,6 +737,8 @@ def build() -> dict:
             "display_name": "Сервисная учётная запись «Устранения»",
             "is_active": True,
             "roles": ["auditor", "operator"],
+            "auth_source": "local",
+            "mfa_enabled": False,
             "permissions": ["view_report", "run_scan", "host_credentials"],
         },
         "engagements": [ENGAGEMENT],
