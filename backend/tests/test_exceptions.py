@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.integrations.scanner import MockScanner
 from app.models import AuditLog, Comment, Outbox, Ticket, TicketException, Vulnerability
 from app.services import exceptions as svc
+from tests.conftest import first_login
 
 
 @pytest.fixture()
@@ -33,8 +34,7 @@ def _user(client, as_, username, roles):
         "/users", headers=as_("admin"), json={"username": username, "password": "long-enough-pw", "roles": roles}
     )
     assert r.status_code == 201, r.text
-    tok = client.post("/auth/token", json={"username": username, "password": "long-enough-pw"}).json()
-    return {"id": r.json()["id"], "h": {"Authorization": f"Bearer {tok['access_token']}"}}
+    return {"id": r.json()["id"], "h": first_login(client, username, "long-enough-pw")}
 
 
 @pytest.fixture()

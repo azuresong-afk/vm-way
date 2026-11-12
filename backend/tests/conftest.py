@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -17,6 +17,8 @@ os.environ["VM_DEMO"] = "0"
 os.environ["VM_JOBS_INLINE"] = "1"
 os.environ["VM_POLL_ENABLED"] = "0"
 os.environ["VM_VERIFY_POLL_SECONDS"] = "0"
+os.environ["VM_JOBS_RETRY_SECONDS"] = "0"
+os.environ["VM_JOBS_TICK_SECONDS"] = "0.05"
 os.environ["VM_ALLOW_MOCK_SOURCES"] = "1"
 os.environ["VM_ROLLOUT_RECONNECT_SECONDS"] = "0.05"
 os.environ["VM_ROLLOUT_REBOOT_TIMEOUT_SECONDS"] = "3"
@@ -34,9 +36,29 @@ from app.security import hash_password  # noqa: E402
 PASSWORD = "correct-horse-battery"
 
 
+# VM_TEST_ON_PG=1 вместе с VM_TEST_PG_URL — все тесты идут на PostgreSQL, а не на SQLite.
+# База из VM_TEST_PG_URL должна быть отдельной: схема public пересоздаётся перед каждым тестом.
+PG_URL = os.environ.get("VM_TEST_PG_URL", "")
+ON_PG = bool(PG_URL) and os.environ.get("VM_TEST_ON_PG", "") == "1"
+
+requires_pg = pytest.mark.skipif(not ON_PG, reason="нужен PostgreSQL: VM_TEST_PG_URL и VM_TEST_ON_PG=1")
+
+
+def reset_pg_schema(url: str) -> None:
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    engine.dispose()
+
+
 @pytest.fixture()
 def db_url(tmp_path):
-    url = f"sqlite:///{tmp_path / 'test.db'}"
+    if ON_PG:
+        url = PG_URL
+        reset_pg_schema(url)
+    else:
+        url = f"sqlite:///{tmp_path / 'test.db'}"
     dbmod.configure(url)
     Base.metadata.create_all(dbmod.engine)
     with dbmod.engine.begin() as conn:
@@ -88,6 +110,19 @@ def client(db_url):
 
 def login(client: TestClient, username: str) -> dict:
     r = client.post("/auth/token", json={"username": username, "password": PASSWORD})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def first_login(client: TestClient, username: str, password: str) -> dict:
+    """Вход пользователя, созданного администратором: выданный пароль сразу меняется на свой."""
+    r = client.post("/auth/token", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    r = client.post(
+        "/me/password",
+        headers={"Authorization": f"Bearer {r.json()['access_token']}"},
+        json={"current_password": password, "new_password": PASSWORD},
+    )
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 

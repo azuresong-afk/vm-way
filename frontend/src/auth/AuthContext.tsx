@@ -9,6 +9,8 @@ interface AuthValue {
   ready: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Меняет свой пароль: прежние сессии завершаются, текущая продолжается с новым токеном. */
+  changePassword: (current: string, next: string) => Promise<void>;
   has: (perm: Perm) => boolean;
 }
 
@@ -50,15 +52,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const changePassword = useCallback(async (current: string, next: string) => {
+    const t = await api.changePassword(current, next);
+    setToken(t.access_token);
+    setMe(await api.me());
+  }, []);
+
   const value = useMemo<AuthValue>(
     () => ({
       me,
       ready,
       login,
       logout,
+      changePassword,
       has: (perm) => !!me?.permissions.includes(perm),
     }),
-    [me, ready, login, logout],
+    [me, ready, login, logout, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -105,7 +105,7 @@ function UserModal({ user, roles, onClose, onDone }: { user: UserOut | null; rol
           <label className="field">
             <span>Пароль</span>
             <input className="input" type="password" value={d.password} onChange={(e) => up({ password: e.target.value })} autoComplete="new-password" />
-            <small>Не короче 10 символов</small>
+            <small>Не короче 10 символов. При первом входе пользователь сменит его на свой.</small>
           </label>
         )}
       </div>
@@ -185,7 +185,7 @@ function PasswordModal({ user, onClose }: { user: UserOut; onClose: () => void }
         <div className="alert alert-ok">Пароль изменён. Все прежние сессии пользователя завершены.</div>
       ) : (
         <>
-          <div className="alert alert-warn">Все текущие сессии пользователя будут завершены — ему придётся войти заново.</div>
+          <div className="alert alert-warn">Все текущие сессии пользователя будут завершены. После входа с этим паролем он должен будет сменить его на свой.</div>
           <label className="field">
             <span>Пароль</span>
             <input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
@@ -244,7 +244,16 @@ export function UsersPage() {
                         {u.roles.length ? u.roles.map((r) => <span key={r} className="tag tag-muted">{ROLE_LABEL[r] ?? r}</span>) : <span className="faint">нет ролей</span>}
                       </span>
                     </td>
-                    <td>{u.is_active ? <span className="pill pill-ok">Активен</span> : <span className="pill pill-muted">Отключён</span>}</td>
+                    <td>
+                      <span className="inline" style={{ gap: 6 }}>
+                        {u.is_active ? <span className="pill pill-ok">Активен</span> : <span className="pill pill-muted">Отключён</span>}
+                        {u.is_active && u.must_change_password && (
+                          <span className="tag tag-muted" title="Пароль выдан администратором, пользователь ещё не сменил его на свой">
+                            ждёт смены пароля
+                          </span>
+                        )}
+                      </span>
+                    </td>
                     <td className="hide-md nowrap faint">{fmtDate(u.created_at)}</td>
                     <td className="right nowrap">
                       <button type="button" className="btn btn-sm btn-ghost" onClick={() => setEdit(u)} disabled={!roles.data}>

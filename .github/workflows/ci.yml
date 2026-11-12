@@ -38,6 +38,11 @@ jobs:
       - run: pytest -q
         env:
           VM_TEST_PG_URL: postgresql+psycopg://vm:vm@localhost:5432/vm_test
+      - name: Все тесты на PostgreSQL
+        run: pytest -q
+        env:
+          VM_TEST_PG_URL: postgresql+psycopg://vm:vm@localhost:5432/vm_test
+          VM_TEST_ON_PG: "1"
 
   frontend:
     runs-on: ubuntu-latest

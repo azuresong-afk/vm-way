@@ -86,3 +86,9 @@ def test_projects(client, as_):
 def test_audit_export(client, as_):
     r = client.get("/audit/export", headers=as_("admin"))
     assert r.status_code == 200 and "auth.login" in r.text
+
+
+def test_non_ascii_token_is_401(client, users):
+    # Заголовки приходят в latin-1: «é» в подписи раньше давало 500 (TypeError в compare_digest).
+    r = client.get("/me", headers={"Authorization": b"Bearer abc.d\xe9f"})
+    assert r.status_code == 401, r.text

@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models import AuditLog, Outbox, Ticket, TicketHistory
-from tests.conftest import login
+from tests.conftest import first_login, login
 
 
 @pytest.fixture()
@@ -26,8 +26,7 @@ def engineer2(client, as_):
     )
     assert r.status_code == 201
     u = r.json()
-    r = client.post("/auth/token", json={"username": "eng2", "password": "long-enough-pw"})
-    return {"id": u["id"], "h": {"Authorization": f"Bearer {r.json()['access_token']}"}}
+    return {"id": u["id"], "h": first_login(client, "eng2", "long-enough-pw")}
 
 
 def _tickets(client, as_, pid, **params):

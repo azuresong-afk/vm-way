@@ -27,7 +27,7 @@ from app.api import (
 from app.config import get_settings
 from app.db import SessionLocal
 from app.services import exceptions as _exceptions  # noqa: F401 — обработчик exception_sync
-from app.services import importer, verification  # noqa: F401 — регистрируют обработчики задач
+from app.services import importer, source_secrets, verification  # noqa: F401 — регистрируют обработчики задач
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -45,6 +45,7 @@ async def lifespan(_: FastAPI):
     with SessionLocal() as db:
         bootstrap.ensure_admin(db)
         bootstrap.ensure_demo(db)
+        source_secrets.rebind_legacy(db)
     jobs.runner.inline = s.jobs_inline
     jobs.runner.start(poll=s.poll_enabled)
     try:
@@ -54,12 +55,15 @@ async def lifespan(_: FastAPI):
 
 
 def create_app() -> FastAPI:
+    s = get_settings()
     app = FastAPI(
         title="Устранение API",
-        version=get_settings().product_version,
+        version=s.product_version,
         lifespan=lifespan,
-        docs_url="/docs",
-        openapi_url="/openapi.json",
+        # Описание API (Swagger и схема) отдаётся без входа, поэтому только на демо-стенде.
+        docs_url="/docs" if s.demo else None,
+        redoc_url=None,
+        openapi_url="/openapi.json" if s.demo else None,
     )
     for r in (
         meta.router,

@@ -8,6 +8,8 @@
    "auditor",
    "operator"
   ],
+  "auth_source": "local",
+  "mfa_enabled": false,
   "permissions": [
    "view_report",
    "run_scan",
@@ -844,7 +846,10 @@
      "percent": 100,
      "hosts_done": 20,
      "hosts_total": 20
-    }
+    },
+    "node_id": null,
+    "node_name": null,
+    "node_mode": null
    },
    "findings": [
     {
@@ -6003,7 +6008,10 @@
      "percent": 100,
      "hosts_done": 20,
      "hosts_total": 20
-    }
+    },
+    "node_id": null,
+    "node_name": null,
+    "node_mode": null
    },
    "findings": [
     {
@@ -11001,7 +11009,10 @@
      "percent": 100,
      "hosts_done": 20,
      "hosts_total": 20
-    }
+    },
+    "node_id": null,
+    "node_name": null,
+    "node_mode": null
    },
    "findings": [
     {
