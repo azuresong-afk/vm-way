@@ -25,7 +25,17 @@ class Settings(BaseSettings):
     demo_password: str = ""
     # Источники mock:// (встроенный мок «Сканера»): только для демо-стенда и тестов.
     allow_mock_sources: bool = False
+    # Пул коротких задач (импорт, опрос, шаги повторных проверок) и пул долгих (раскатки).
     jobs_workers: int = 4
+    jobs_long_workers: int = 4
+    # Как часто планировщик запускает задачи, у которых подошёл срок.
+    jobs_tick_seconds: float = 1.0
+    # Пауза перед первым повтором после временной ошибки; каждый следующий — вчетверо дольше.
+    jobs_retry_seconds: float = 30.0
+    # Сроки хранения, дней (0 — не чистить): завершённые задачи, доставленные и недоставленные события outbox.
+    jobs_retention_days: int = 30
+    outbox_retention_days: int = 30
+    outbox_undelivered_retention_days: int = 90
     # Задачи исполняются сразу в запросе (тесты).
     jobs_inline: bool = False
     poll_enabled: bool = True

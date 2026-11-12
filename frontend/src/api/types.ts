@@ -375,6 +375,8 @@ export interface JobOut {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  /** Не раньше этого времени: задача ждёт внешнюю систему или повтора после временной ошибки. */
+  run_after?: string | null;
 }
 
 export interface RunOut {

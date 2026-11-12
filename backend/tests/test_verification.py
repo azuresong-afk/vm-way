@@ -3,6 +3,7 @@
 import pytest
 from sqlalchemy import func, select
 
+from app import jobs
 from app.integrations.scanner import MockScanner
 from app.models import (
     AuditLog,
@@ -297,17 +298,17 @@ def test_restart_resumes_without_second_run(client, as_, db, users, project):
     mock = MockScanner.shared("demo")
     mock.running_polls = 5
 
-    def crash(_):
-        raise RuntimeError("служба остановлена")
-
-    with pytest.raises(RuntimeError):
-        verification.execute(db, v.id, sleep=crash)
+    # Прогон идёт: шаг проверки не ждёт в потоке, а откладывает задачу.
+    with pytest.raises(jobs.Defer):
+        verification.execute(db, v.id)
     db.expire_all()
     v = db.get(Verification, v.id)
     assert v.status == "running" and v.scanner_run_id is not None
     # После рестарта задача продолжает ждать тот же прогон.
-    out = verification.execute(db, v.id, sleep=lambda _: None)
-    assert out["status"] == "done" and out["result"]["outcome"] == "verified"
+    jobs.runner.recover()
+    db.expire_all()
+    v = db.get(Verification, v.id)
+    assert v.status == "done" and v.result["outcome"] == "verified"
     posts = [x for x in mock.requests if x[0] == "POST" and x[1] == "/engagements/7/runs"]
     assert len(posts) == 1
     assert db.get(Ticket, t.id).status == "verified"
