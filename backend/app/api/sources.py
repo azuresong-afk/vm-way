@@ -13,7 +13,7 @@ from app.deps import Principal, get_project, require
 from app.integrations.scanner import ScannerError
 from app.models import Job, ScannerSource, ScanRun, SourceLink
 from app.rbac import Perm
-from app.security import encrypt_secret
+from app.services import source_secrets
 from app.services.importer import client_for
 
 router = APIRouter(tags=["sources"])
@@ -154,9 +154,12 @@ def create_source(
     body: SourceIn, p: Principal = Depends(require(Perm.SOURCES_MANAGE)), db: Session = Depends(get_db)
 ) -> dict:
     data = body.model_dump(exclude={"password"})
-    s = ScannerSource(**data, secret_enc=encrypt_secret(body.password) if body.password else None)
+    s = ScannerSource(**data)
     db.add(s)
     db.flush()
+    if body.password:
+        # После flush: пароль шифруется с привязкой к id записи.
+        source_secrets.write_password(s, body.password)
     audit.record(
         db,
         p.user,
@@ -182,7 +185,7 @@ def update_source(
     for k, v in changes.items():
         setattr(s, k, v)
     if body.password:
-        s.secret_enc = encrypt_secret(body.password)
+        source_secrets.write_password(s, body.password)
         changes["password_changed"] = True
     audit.record(db, p.user, "source.update", object_type="source", object_id=s.id, ip=p.ip, details=changes)
     db.commit()
