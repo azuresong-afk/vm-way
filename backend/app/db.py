@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -52,6 +52,22 @@ def configure(url: str) -> None:
     global engine
     engine = make_engine(url)
     SessionLocal.configure(bind=engine)
+
+
+def lock_project(db: Session, project_id: str) -> None:
+    """Блокировка проекта до конца транзакции: импорт прогонов и синхронизация активов одного
+    проекта идут строго по очереди, даже из разных потоков и процессов.
+
+    Без неё два параллельных импорта оба не видят ещё не зафиксированные строки друг друга
+    (группы активов, уязвимости, заявки) и создают их дважды: один падает на уникальном ключе,
+    а история появления и исчезновения уязвимостей может сложиться не в порядке прогонов.
+
+    Это рекомендательная блокировка PostgreSQL (advisory lock): она никого не задерживает, кроме
+    других вызовов lock_project для того же проекта, и снимается сама при commit или rollback.
+    На SQLite ничего не делает — там и так один пишущий.
+    """
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"vm.project:{project_id}"})
 
 
 def get_db() -> Iterator[Session]:

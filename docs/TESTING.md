@@ -232,7 +232,7 @@ docker compose down -v      # удаляет и базу стенда
 
 CI (GitHub Actions, `.github/workflows/ci.yml`) на каждый PR:
 
-- **backend** — `ruff check`, `ruff format --check`, совпадение демо-фикстуры с генератором, `pytest` (SQLite и миграции на PostgreSQL 16);
+- **backend** — `ruff check`, `ruff format --check`, совпадение демо-фикстуры с генератором, `pytest` дважды: на SQLite и целиком на PostgreSQL 16 (`VM_TEST_ON_PG=1`), включая миграции и тесты параллельного импорта;
 - **frontend** — ESLint, `tsc --noEmit`, vitest, сборка Vite;
 - **compose** — сборка образов `app` и `web`, `docker compose up --wait` с демо-данными, `scripts/smoke.sh`, копия и восстановление, повторный smoke.
 
