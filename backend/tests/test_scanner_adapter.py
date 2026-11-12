@@ -252,3 +252,13 @@ def test_http_errors_are_safe():
 
     with pytest.raises(ScannerError, match="недоступен"):
         _http_scanner(boom).me()
+
+
+def test_contract_stop_run(raw, mock):
+    """`POST /runs/{id}/stop` отвечает RunOut: идущий прогон остановлен, завершённый не меняется."""
+    mock.running_polls = 5
+    started = mock.client().start_run(7, {"targets": ["10.20.2.26"], "modules": ["auth_inventory"]})
+    r = raw.post(f"/runs/{started['id']}/stop")
+    assert r.status_code == 200 and sc.RunOut.model_validate(r.json()).status == "stopped"
+    assert mock.client().stop_run(101)["status"] == "done"
+    assert raw.post("/runs/999999/stop").status_code == 404

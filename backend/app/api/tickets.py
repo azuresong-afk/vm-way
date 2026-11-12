@@ -345,7 +345,7 @@ def read_ticket(ticket_id: int, p: Principal = Depends(require(Perm.VIEW)), db: 
         "vulnerabilities": [vuln_out(v) for v in vulns],
         "watchers": [_user(u) for u in ws],
         "watching": any(u.id == p.user.id for u in ws),
-        "verifications": [verification_out(v) for v in checks],
+        "verifications": [verification_out(v, Actor(p.user, p.perms, p.ip)) for v in checks],
         "rollouts": [
             {
                 "id": r.id,

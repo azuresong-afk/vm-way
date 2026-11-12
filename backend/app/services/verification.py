@@ -11,8 +11,15 @@
 
 Номер прогона «Сканера» сохраняется сразу после запуска: после рестарта задача не запускает
 второй прогон, а продолжает ждать первый.
+
+Проверка не остаётся «в работе» навсегда:
+- сбой связи со «Сканером» во время ожидания не роняет задачу — она ждёт дальше до общего срока
+  (`verify_timeout_minutes`), затем проверка получает статус `failed` с причиной;
+- любой другой сбой задачи переводит проверку в `failed` (обработчик сбоя и сверка при старте);
+- проверку можно отменить (`cancel`): статус `cancelled`, прогон «Сканера» останавливается.
 """
 
+import logging
 import time
 from datetime import timedelta
 
@@ -35,9 +42,13 @@ from app.models import (
     Verification,
     Vulnerability,
 )
+from app.rbac import Perm
 from app.services import importer, workflow
 from app.services.workflow import CLOSED_STATUSES, Actor, WorkflowError
 
+log = logging.getLogger("vm.verification")
+
+# requested → running → done | failed | cancelled
 ACTIVE = ("requested", "running")
 # Порядок модулей — как MODULE_ORDER «Сканера» (scanner/core/orchestrator.py).
 MODULE_ORDER = ("discovery", "vuln", "auth_inventory", "win_inventory", "config_audit", "password_policy", "cred_audit")
@@ -48,7 +59,14 @@ def _order(modules: set[str]) -> list[str]:
     return known + sorted(modules - set(known))
 
 
-def verification_out(v: Verification) -> dict:
+def can_cancel(v: Verification, actor: Actor) -> bool:
+    """Отменяет проверку тот, кто её запустил, или руководитель."""
+    if v.status not in ACTIVE:
+        return False
+    return actor.can(Perm.TICKET_ASSIGN) or (actor.can(Perm.VERIFY) and v.requested_by == actor.user.id)
+
+
+def verification_out(v: Verification, actor: Actor | None = None) -> dict:
     return {
         "id": v.id,
         "ticket_id": v.ticket_id,
@@ -66,6 +84,7 @@ def verification_out(v: Verification) -> dict:
         "requested_by": v.requested_by,
         "created_at": v.created_at,
         "finished_at": v.finished_at,
+        "can_cancel": actor is not None and can_cancel(v, actor),
     }
 
 
@@ -285,9 +304,34 @@ def _fail(db: Session, v: Verification, message: str) -> None:
     )
 
 
+def _locked(db: Session, verification_id: int) -> Verification | None:
+    """Проверка под блокировкой строки со свежим статусом: отмена и итог не перетирают друг друга."""
+    return db.scalars(
+        select(Verification)
+        .where(Verification.id == verification_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
+
+
+def _transient(e: ScannerError) -> bool:
+    """Сбой, который может пройти сам: нет связи, ошибка на стороне «Сканера», просьба подождать."""
+    return e.status is None or e.status >= 500 or e.status in (408, 429)
+
+
+def _stop_run(client, scanner_run_id: int) -> str:  # noqa: ANN001
+    """Просит «Сканер» остановить прогон. Возвращает текст ошибки или пустую строку."""
+    try:
+        client.stop_run(scanner_run_id)
+    except ScannerError as e:
+        log.warning("Прогон %s «Сканера» не остановлен: %s", scanner_run_id, e)
+        return str(e)
+    return ""
+
+
 def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
     s = get_settings()
-    v = db.get(Verification, verification_id)
+    v = db.get(Verification, verification_id, populate_existing=True)
     if v is None:
         raise LookupError("Проверка не найдена")
     if v.status not in ACTIVE:
@@ -327,24 +371,58 @@ def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
             _fail(db, v, str(e))
             db.commit()
             raise
+        v = _locked(db, verification_id)
         v.scanner_run_id = int(created["id"])
         v.denied_targets = created.get("denied_targets") or []
+        if v.status not in ACTIVE:
+            # Проверку отменили, пока «Сканер» принимал запуск: прогон не нужен.
+            db.commit()
+            _stop_run(client, v.scanner_run_id)
+            return verification_out(v)
         v.status = "running"
         _mark_denied(db, v, v.denied_targets)
         db.commit()
 
-    # Ждём завершения прогона.
+    # Ждём завершения прогона. Между опросами соединение с БД не держим.
+    scanner_run_id = v.scanner_run_id
     deadline = as_utc(v.created_at) + timedelta(minutes=s.verify_timeout_minutes)
     while True:
-        meta = client.run(v.scanner_run_id)
-        if meta["status"] in FINISHED_STATUSES:
-            break
+        status = db.scalar(select(Verification.status).where(Verification.id == verification_id))
+        db.rollback()
+        if status not in ACTIVE:  # отменена или уже завершена
+            return verification_out(db.get(Verification, verification_id))
+        trouble = ""
+        try:
+            meta = client.run(scanner_run_id)
+            if meta["status"] in FINISHED_STATUSES:
+                return _complete(db, verification_id, link, client)
+        except ScannerError as e:
+            db.rollback()
+            if not _transient(e):
+                v = _locked(db, verification_id)
+                if v.status in ACTIVE:
+                    _fail(db, v, str(e))
+                db.commit()
+                return verification_out(v)
+            # Сбой связи — не повод ронять проверку: «Сканер» мог перезапускаться. Ждём дальше.
+            trouble = str(e)
+            log.warning("Проверка %s: прогон %s пока не получен: %s", verification_id, scanner_run_id, e)
         if utcnow() > deadline:
-            _fail(db, v, f"прогон №{v.scanner_run_id} не завершился за {s.verify_timeout_minutes} мин")
+            v = _locked(db, verification_id)
+            if v.status in ACTIVE:
+                message = f"прогон №{scanner_run_id} не завершился за {s.verify_timeout_minutes} мин"
+                _fail(db, v, f"{message}; последняя ошибка: {trouble}" if trouble else message)
             db.commit()
             return verification_out(v)
         sleep(s.verify_poll_seconds)
 
+
+def _complete(db: Session, verification_id: int, link: SourceLink, client) -> dict:  # noqa: ANN001
+    """Прогон завершён: импорт и итог — в одной транзакции под блокировкой проверки."""
+    v = _locked(db, verification_id)
+    if v.status not in ACTIVE:
+        db.rollback()
+        return verification_out(v)
     actor = db.get(User, v.requested_by) if v.requested_by else None
     denied = {str(d.get("target")) for d in v.denied_targets}
     run, _ = importer.import_run(
@@ -369,6 +447,90 @@ def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
     _finish(db, v, hosts, run)
     db.commit()
     return verification_out(v)
+
+
+# --- отмена и сбои задачи ---
+
+
+def cancel(db: Session, verification_id: int, actor: Actor, reason: str = "") -> Verification | None:
+    """Отменяет идущую проверку и просит «Сканер» остановить прогон. Коммит — здесь.
+
+    Заявка остаётся в своём статусе: проверку можно запустить заново."""
+    v = _locked(db, verification_id)
+    if v is None:
+        return None
+    if v.status not in ACTIVE:
+        raise WorkflowError("Отменять нечего: проверка уже завершена")
+    if not can_cancel(v, actor):
+        raise WorkflowError("Отменить проверку может тот, кто её запустил, или руководитель", 403)
+    reason = reason.strip()[:1000]
+    v.status = "cancelled"
+    v.finished_at = utcnow()
+    v.result = {**(v.result or {}), "cancelled_by": actor.user.id, "cancel_reason": reason}
+    details = {"verification_id": v.id, "scanner_run_id": v.scanner_run_id, "reason": reason}
+    db.add(
+        TicketHistory(
+            ticket_id=v.ticket_id, actor_id=actor.user.id, action="verify_cancelled", to_value="", details=details
+        )
+    )
+    audit.record(
+        db,
+        actor.user,
+        "ticket.verify_cancel",
+        object_type="ticket",
+        object_id=v.ticket_id,
+        project_id=v.project_id,
+        ip=actor.ip,
+        details={"ticket_id": v.ticket_id, **details},
+    )
+    db.commit()
+
+    # Статус уже сохранён: дальше — остановка прогона, её сбой отмену не отменяет.
+    who = actor.user.display_name or actor.user.username
+    text = f"Повторная проверка отменена ({who})" + (f": {reason}" if reason else "")
+    if v.scanner_run_id is not None:
+        link = db.scalar(
+            select(SourceLink).where(
+                SourceLink.project_id == v.project_id,
+                SourceLink.source_id == v.source_id,
+                SourceLink.engagement_id == v.engagement_id,
+            )
+        )
+        error = _stop_run(importer.client_for(link.source), v.scanner_run_id) if link else "привязка удалена"
+        if error:
+            text += f". Прогон №{v.scanner_run_id} остановить не удалось ({error}) — остановите его в «Сканере»"
+            v.result = {**v.result, "stop_error": error[:500]}
+        else:
+            text += f". Прогон №{v.scanner_run_id} «Сканера» остановлен"
+    _comment(db, v.ticket_id, text + ".", {"verification_id": v.id})
+    db.commit()
+    return v
+
+
+def _orphan_message(error: str) -> str:
+    return "задача проверки прервана" + (f" ({error})" if error else "") + " — запустите проверку заново"
+
+
+@jobs.on_failure("verify")
+def _job_failed(db: Session, job: Job, error: str) -> None:
+    """Задача упала — проверка не остаётся «в работе»: иначе новую проверку заявки не запустить."""
+    v = _locked(db, int(job.payload["verification_id"]))
+    if v is not None and v.status in ACTIVE:
+        _fail(db, v, _orphan_message(error))
+
+
+@jobs.on_recover
+def fail_orphaned(db: Session) -> list[int]:
+    """Сверка при старте: активные проверки, чья задача уже не исполняется, получают статус failed."""
+    out = []
+    for v in db.scalars(select(Verification).where(Verification.status.in_(ACTIVE))):
+        job_id = (v.result or {}).get("job_id")
+        if jobs.alive(db, job_id):
+            continue
+        job = db.get(Job, job_id) if job_id else None
+        _fail(db, v, _orphan_message(job.error if job else ""))
+        out.append(v.id)
+    return out
 
 
 @jobs.handler("verify")

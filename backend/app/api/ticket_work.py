@@ -204,7 +204,7 @@ def ticket_verifications(
         raise not_found("Заявка")
     get_project(db, t.project_id, p)
     rows = db.scalars(select(Verification).where(Verification.ticket_id == t.id).order_by(Verification.id.desc()))
-    return [verification.verification_out(v) for v in rows]
+    return [verification.verification_out(v, _actor(p)) for v in rows]
 
 
 @router.get("/verifications/{verification_id}")
@@ -215,7 +215,32 @@ def read_verification(
     if not v:
         raise not_found("Проверка")
     get_project(db, v.project_id, p)
-    return verification.verification_out(v)
+    return verification.verification_out(v, _actor(p))
+
+
+class CancelIn(BaseModel):
+    reason: str = Field(default="", max_length=1000)
+
+
+@router.post("/verifications/{verification_id}/cancel")
+def cancel_verification(
+    verification_id: int,
+    body: CancelIn | None = None,
+    p: Principal = Depends(require(Perm.VERIFY)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Отмена идущей проверки: тем, кто её запустил, или руководителем. Прогон «Сканера» останавливается."""
+    v = db.get(Verification, verification_id)
+    if not v:
+        raise not_found("Проверка")
+    get_project(db, v.project_id, p)
+    try:
+        v = verification.cancel(db, verification_id, _actor(p), (body or CancelIn()).reason)
+    except WorkflowError as e:
+        raise _fail(e, db)
+    if v is None:
+        raise not_found("Проверка")
+    return verification.verification_out(v, _actor(p))
 
 
 class BulkIn(BaseModel):

@@ -119,6 +119,40 @@ describe("заявка", () => {
     await waitFor(() => expect(calls.some((c) => c.path === "/tickets/5/verify")).toBe(true));
     expect(calls.find((c) => c.path === "/tickets/5/verify")!.body).toEqual({ hosts: null, mark_fixed: true });
   });
+
+  it("идущую проверку можно отменить, отменённая показана с причиной", async () => {
+    const check = {
+      id: 9, ticket_id: 5, project_id: "p1", source_id: 1, engagement_id: 7, scanner_run_id: 1003, run_id: null,
+      targets: ["10.20.3.32"], denied_targets: [], modules: ["vuln"], result: { job_id: 4 }, error: "", requested_by: null,
+      created_at: "2026-11-12T08:00:00Z", finished_at: null,
+    };
+    const calls = mockApi({
+      "/me": engineer,
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/tickets/5": {
+        ...detail,
+        can: { ...detail.can, take: false, verify: false },
+        verifications: [
+          { ...check, status: "running", can_cancel: true },
+          { ...check, id: 8, scanner_run_id: 1002, status: "cancelled", can_cancel: false, result: { cancel_reason: "Хост выведен из работы" } },
+        ],
+      },
+      "/tickets/5/history": { history: [], comments: [] },
+      "POST /verifications/9/cancel": { ...check, status: "cancelled", can_cancel: false },
+    });
+    renderAt("/tickets/5");
+    expect(await screen.findByText("Причина: Хост выведен из работы")).toBeInTheDocument();
+    expect(screen.getByText("Отменена")).toBeInTheDocument();
+    const user = userEvent.setup();
+    // Кнопка одна: у отменённой проверки её нет.
+    await user.click(screen.getByRole("button", { name: "Отменить" }));
+    const dialog = await screen.findByRole("dialog", { name: "Отменить повторную проверку?" });
+    expect(within(dialog).getByText(/Прогон №1003 «Сканера» будет остановлен/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Отменить проверку" }));
+    await waitFor(() => expect(calls.some((c) => c.path === "/verifications/9/cancel")).toBe(true));
+    expect(calls.find((c) => c.path === "/verifications/9/cancel")!.body).toEqual({ reason: "" });
+  });
 });
 
 describe("права", () => {

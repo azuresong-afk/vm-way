@@ -214,6 +214,7 @@ export const api = {
       `/tickets/${id}/verify`,
       post({ hosts: hosts?.length ? hosts : null, mark_fixed: markFixed }),
     ),
+  cancelVerification: (id: number, reason = "") => json<VerificationOut>(`/verifications/${id}/cancel`, post({ reason })),
   bulk: (
     projectId: string,
     data: {
