@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,7 +39,29 @@ class User(Base):
     platform_sub: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     token_version: Mapped[int] = mapped_column(Integer, default=0)
+    # Пароль задал администратор: до смены на свой пользователю доступна только смена пароля.
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LoginFailure(Base):
+    """Неудачная попытка входа — для защиты от перебора пароля (app/services/login_guard.py)."""
+
+    __tablename__ = "login_failures"
+    __table_args__ = (Index("ix_login_failures_username", "username"), Index("ix_login_failures_ip", "ip"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(64))
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    at: Mapped[int] = mapped_column(BigInteger)  # время Unix, секунды
+
+
+class RevokedToken(Base):
+    """Токен, отозванный выходом. Запись живёт до истечения срока самого токена."""
+
+    __tablename__ = "revoked_tokens"
+    jti: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[int] = mapped_column(BigInteger)  # время Unix, секунды
 
 
 class Project(Base):

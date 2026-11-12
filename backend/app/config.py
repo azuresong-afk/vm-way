@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     encryption_key: str = ""
     token_ttl_minutes: int = 480
     auth_mode: str = "local"  # local | platform (этап 3)
+    # Защита от перебора пароля: сколько неудачных входов за окно допускается для пары
+    # «учётная запись + адрес», для одного адреса (любые имена) и для учётной записи (любые адреса).
+    login_window_minutes: int = 15
+    login_max_failures: int = 5
+    login_max_failures_ip: int = 30
+    login_max_failures_account: int = 20
     product_version: str = "0.1.0"
     # Базовый адрес веб-интерфейса «Сканера» для ссылок «Открыть в Сканере».
     scanner_web_url: str = ""

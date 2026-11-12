@@ -19,6 +19,7 @@ export function mockApi(routes: Record<string, Handler | unknown>) {
     if (!key) return new Response(JSON.stringify({ detail: `нет мока для ${method} ${path}` }), { status: 404 });
     const r = routes[key];
     const data = typeof r === "function" ? (r as Handler)(url, init) : r;
+    if (data instanceof Response) return data; // обработчик сам задал статус
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (Array.isArray(data)) headers["X-Total-Count"] = String(data.length);
     return new Response(JSON.stringify(data), { status: 200, headers });

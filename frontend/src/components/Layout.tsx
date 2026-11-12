@@ -25,6 +25,7 @@ import { useAuth, type Perm } from "../auth/AuthContext";
 import { projectLabel, useProject } from "../auth/ProjectContext";
 import { useTheme } from "../theme/ThemeContext";
 import { ROLE_LABEL } from "../lib/labels";
+import { ChangePasswordModal } from "./ChangePassword";
 import { JobsChip } from "./JobsChip";
 import { QuickSearch } from "./QuickSearch";
 
@@ -137,6 +138,7 @@ export function Layout() {
   const toApprove = useToApprove();
   const items = NAV.filter((i) => has(i.perm));
   const [open, setOpen] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname]);
   const name = me?.display_name || me?.username || "";
@@ -176,7 +178,26 @@ export function Layout() {
               <span title={name}>{name}</span>
               <span>{roles}</span>
             </div>
-            <button type="button" className="btn btn-sm btn-ghost icon-btn" style={{ marginLeft: "auto", width: 30 }} onClick={logout} aria-label="Выйти" title="Выйти">
+            {me?.can_change_password && (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost icon-btn"
+                style={{ marginLeft: "auto", width: 30 }}
+                onClick={() => setChangingPassword(true)}
+                aria-label="Сменить пароль"
+                title="Сменить пароль"
+              >
+                <KeyRound size={15} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost icon-btn"
+              style={{ marginLeft: me?.can_change_password ? 0 : "auto", width: 30 }}
+              onClick={logout}
+              aria-label="Выйти"
+              title="Выйти"
+            >
               <LogOut size={15} />
             </button>
           </div>
@@ -200,6 +221,7 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+      {changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} />}
     </div>
   );
 }

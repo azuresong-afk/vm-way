@@ -25,11 +25,8 @@ export function LoginPage() {
     } catch (err) {
       const ex = err as ApiError;
       setError(
-        ex.status === 401
-          ? "Неверное имя пользователя или пароль"
-          : ex.status === 429
-            ? "Слишком много неудачных попыток. Повторите позже."
-            : ex.message,
+        // при 429 сервер сам говорит, через сколько минут повторить
+        ex.status === 401 ? "Неверное имя пользователя или пароль" : ex.message,
       );
     } finally {
       setBusy(false);
