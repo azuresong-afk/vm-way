@@ -1,0 +1,36 @@
+name: Контракт «Сканера»
+
+# Сверяет копию схем API «Сканера» (backend/tests/scanner_contract.py) с оригиналом
+# из scanner-way. Раз в сутки, вручную и в PR, которые трогают копию, мок или саму сверку.
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - backend/tests/scanner_contract.py
+      - backend/tests/scanner_contract_check.py
+      - backend/app/integrations/scanner/**
+      - .github/workflows/scanner-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  scanner-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Схемы из scanner-way (ветка по умолчанию)
+        uses: actions/checkout@v4
+        with:
+          repository: azuresong-afk/scanner-way
+          path: scanner-way
+          sparse-checkout: scanner/api/schemas.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Сверка копии схем со «Сканером»
+        working-directory: backend
+        run: python -m tests.scanner_contract_check ../scanner-way/scanner/api/schemas.py

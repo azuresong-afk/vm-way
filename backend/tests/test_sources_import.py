@@ -1,5 +1,6 @@
 """Задача 1.3: источники, привязки, импорт прогонов по кнопке и опросом, без дублей."""
 
+import pytest
 from sqlalchemy import func, select
 
 from app import jobs
@@ -41,6 +42,63 @@ def test_source_secret_is_encrypted_and_hidden(client, as_, db):
     client.patch(f"/sources/{src['id']}", headers=as_("admin"), json={"name": "Сканер-2", "password": ""})
     db.expire_all()
     assert db.get(ScannerSource, src["id"]).secret_enc == row.secret_enc
+
+
+def test_source_secret_is_bound_to_its_row(client, as_, db):
+    from cryptography.exceptions import InvalidTag
+
+    from app.security import decrypt_secret, encrypt_secret
+    from app.services import source_secrets
+
+    a = _source(client, as_)
+    b = client.post(
+        "/sources",
+        headers=as_("admin"),
+        json={"name": "Сканер-Б", "base_url": "mock://b", "username": "svc", "password": "other-secret-pw"},
+    ).json()
+    row_a, row_b = db.get(ScannerSource, a["id"]), db.get(ScannerSource, b["id"])
+    assert source_secrets.read_password(row_a) == "svc-secret-pw"
+    assert source_secrets.read_password(row_b) == "other-secret-pw"
+    # Без контекста записи и в чужой строке шифротекст не читается.
+    with pytest.raises(InvalidTag):
+        decrypt_secret(row_a.secret_enc)
+    row_b.secret_enc = row_a.secret_enc
+    with pytest.raises(InvalidTag):
+        source_secrets.read_password(row_b)
+    db.rollback()
+
+    # Смена пароля через API тоже шифрует с привязкой.
+    client.patch(f"/sources/{a['id']}", headers=as_("admin"), json={"password": "new-secret-pw"})
+    db.expire_all()
+    assert source_secrets.read_password(db.get(ScannerSource, a["id"])) == "new-secret-pw"
+
+    # Пароль, сохранённый до привязки (без контекста), переводится при старте — один раз.
+    row_a = db.get(ScannerSource, a["id"])
+    row_a.secret_enc = encrypt_secret("legacy-pw")
+    db.commit()
+    assert source_secrets.rebind_legacy(db) == 1
+    db.expire_all()
+    assert source_secrets.read_password(db.get(ScannerSource, a["id"])) == "legacy-pw"
+    assert source_secrets.read_password(db.get(ScannerSource, b["id"])) == "other-secret-pw"
+    assert source_secrets.rebind_legacy(db) == 0
+
+
+def test_legacy_source_secret_survives_restart(db_url, db):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.security import encrypt_secret
+    from app.services import source_secrets
+
+    src = ScannerSource(name="Старый", base_url="mock://old", username="svc", secret_enc=encrypt_secret("old-pw"))
+    broken = ScannerSource(name="Битый", base_url="mock://bad", username="svc", secret_enc="v1:AAAA")
+    db.add_all([src, broken])
+    db.commit()
+    with TestClient(create_app()):  # старт приложения перешифровывает, битая запись старту не мешает
+        pass
+    db.expire_all()
+    assert source_secrets.read_password(db.get(ScannerSource, src.id)) == "old-pw"
+    assert db.get(ScannerSource, broken.id).secret_enc == "v1:AAAA"
 
 
 def test_source_validation_and_mock_guard(client, as_, monkeypatch):

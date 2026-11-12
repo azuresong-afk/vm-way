@@ -64,7 +64,8 @@ def read_token(token: str) -> dict | None:
         if int(payload.get("exp", 0)) < time.time():
             return None
         return payload
-    except (ValueError, json.JSONDecodeError):
+    except (ValueError, TypeError):
+        # TypeError: compare_digest не принимает строки с не-ASCII символами (подпись из мусора).
         return None
 
 

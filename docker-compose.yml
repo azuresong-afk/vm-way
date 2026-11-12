@@ -5,6 +5,9 @@
 #
 # Порты хоста по контракту «Платформы»: web 18081, api 18001, db 15433
 # (меняются в .env: VM_WEB_PORT, VM_API_PORT, VM_DB_PORT).
+#
+# Веб отдаётся по HTTP. Для работы с заказчиком поставьте перед ним обратный прокси
+# с TLS и закройте прямой доступ (VM_WEB_BIND=127.0.0.1) — docs/INSTALL.md, раздел 5.
 
 # Ротация логов контейнеров: без неё json-логи Docker растут без ограничений.
 x-logging: &default-logging
@@ -41,12 +44,14 @@ services:
     image: vm-ustranenie-web:${VM_IMAGE_TAG:-local}
     environment:
       API_UPSTREAM: http://app:8000
+      # Чьему X-Forwarded-For верить (обратный прокси с TLS перед веб).
+      TRUSTED_PROXY: ${VM_TRUSTED_PROXY:-127.0.0.1}
     depends_on:
       app:
         condition: service_healthy
     # Единственный порт, нужный пользователям.
     ports:
-      - "${VM_WEB_PORT:-18081}:8080"
+      - "${VM_WEB_BIND:-0.0.0.0}:${VM_WEB_PORT:-18081}:8080"
     restart: unless-stopped
     logging: *default-logging
 
