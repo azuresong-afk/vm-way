@@ -18,6 +18,9 @@ def test_token_roundtrip_and_tamper():
     body, sig = tok.split(".")
     assert read_token(body + "." + sig[:-2] + "AA") is None
     assert read_token("garbage") is None
+    # Не-ASCII в подписи или теле — тоже «нет токена», а не исключение (compare_digest бросает TypeError).
+    assert read_token(body + ".подпись") is None
+    assert read_token("тело." + sig) is None
 
 
 def test_token_expired():

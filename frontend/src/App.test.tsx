@@ -46,6 +46,75 @@ describe("вход", () => {
   });
 });
 
+describe("пароль", () => {
+  it("при блокировке входа показывает ответ сервера", async () => {
+    mockApi({
+      "POST /auth/token": () =>
+        new Response(JSON.stringify({ detail: "Слишком много неудачных попыток. Повторите через 14 мин." }), { status: 429 }),
+    });
+    renderAt("/login");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Имя пользователя"), "eng");
+    await user.type(screen.getByLabelText("Пароль"), "wrong-password");
+    await user.click(screen.getByRole("button", { name: /Войти/ }));
+    expect(await screen.findByText(/Повторите через 14 мин/)).toBeInTheDocument();
+  });
+
+  it("выданный администратором пароль нужно сменить до начала работы", async () => {
+    setToken("t");
+    let changed = false;
+    const calls = mockApi({
+      "/me": () => ({ ...engineer, must_change_password: !changed }),
+      "POST /me/password": () => {
+        changed = true;
+        return { access_token: "t2", token_type: "bearer", expires_in: 3600 };
+      },
+      "/projects": [project],
+      "/projects/p1/tickets": [brief],
+      "/projects/p1/ticket-facets": { os: [], kinds: [] },
+      "/projects/p1/jobs": [],
+    });
+    renderAt("/tickets");
+    const user = userEvent.setup();
+    expect(await screen.findByRole("heading", { name: "Задайте свой пароль" })).toBeInTheDocument();
+    expect(calls.some((c) => c.path.startsWith("/projects"))).toBe(false);
+    const submit = screen.getByRole("button", { name: /Сменить пароль и продолжить/ });
+    await user.type(screen.getByLabelText("Текущий пароль"), "issued-by-admin");
+    await user.type(screen.getByLabelText("Новый пароль"), "my-own-long-password");
+    await user.type(screen.getByLabelText("Новый пароль ещё раз"), "my-own-long-passwor");
+    expect(screen.getByText("Пароли не совпадают")).toBeInTheDocument();
+    expect(submit).toBeDisabled();
+    await user.type(screen.getByLabelText("Новый пароль ещё раз"), "d");
+    await user.click(submit);
+    expect(await screen.findByRole("heading", { name: "Заявки" })).toBeInTheDocument();
+    expect(sessionStorage.getItem("platform.token")).toBe("t2");
+    const sent = calls.find((c) => c.method === "POST" && c.path === "/me/password");
+    expect(sent?.body).toEqual({ current_password: "issued-by-admin", new_password: "my-own-long-password" });
+  });
+
+  it("свой пароль меняется из меню, сессия продолжается с новым токеном", async () => {
+    setToken("t");
+    mockApi({
+      "/me": engineer,
+      "POST /me/password": { access_token: "t2", token_type: "bearer", expires_in: 3600 },
+      "/projects": [project],
+      "/projects/p1/tickets": [brief],
+      "/projects/p1/ticket-facets": { os: [], kinds: [] },
+      "/projects/p1/jobs": [],
+    });
+    renderAt("/tickets");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Сменить пароль" }));
+    const dialog = screen.getByRole("dialog", { name: "Смена пароля" });
+    await user.type(within(dialog).getByLabelText("Текущий пароль"), "correct-horse-battery");
+    await user.type(within(dialog).getByLabelText("Новый пароль"), "my-own-long-password");
+    await user.type(within(dialog).getByLabelText("Новый пароль ещё раз"), "my-own-long-password");
+    await user.click(within(dialog).getByRole("button", { name: "Сменить пароль" }));
+    expect(await within(dialog).findByText(/Пароль изменён/)).toBeInTheDocument();
+    expect(sessionStorage.getItem("platform.token")).toBe("t2");
+  });
+});
+
 describe("заявки", () => {
   beforeEach(() => setToken("t"));
 

@@ -16,6 +16,17 @@ const KIND_LABEL: Record<string, string> = {
   verify: "Повторная проверка",
 };
 
+/** Задача уже начата: исполняется или ждёт внешнюю систему (прогон «Сканера»), не занимая поток. */
+function isActive(j: JobOut): boolean {
+  return j.status === "running" || (j.status === "queued" && j.started_at != null && !j.error);
+}
+
+/** Состояние словами: начатая задача «идёт», после временной ошибки — «ждёт повтора». */
+function jobState(j: JobOut): string {
+  if (isActive(j)) return "идёт";
+  return j.status === "queued" && j.started_at != null ? "ждёт повтора" : "в очереди";
+}
+
 /** Фоновые задачи текущего проекта (импорт, повторная проверка) — плашка в шапке. */
 export function JobsChip() {
   const { current } = useProject();
@@ -58,16 +69,16 @@ export function JobsChip() {
   }, [projectId, canView]);
 
   if (!jobs.length) return null;
-  const job = jobs.find((j) => j.status === "running") ?? jobs[0];
+  const job = jobs.find(isActive) ?? jobs[0];
   const others = jobs.length - 1;
   const main = job.title || KIND_LABEL[job.kind] || "Фоновая задача";
-  const state = job.status === "running" ? "идёт" : "в очереди";
+  const state = jobState(job);
   const title = [main, state, others > 0 ? `ещё ${others} ${plural(others, ["задача", "задачи", "задач"])}` : null]
     .filter(Boolean)
     .join(" · ");
   return (
     <span className="run-chip" title={title} aria-label={title} role="status">
-      <span className={`run-chip-dot ${job.status === "running" ? "running" : ""}`} aria-hidden="true" />
+      <span className={`run-chip-dot ${isActive(job) ? "running" : ""}`} aria-hidden="true" />
       <span className="run-chip-text">{main}</span>
       <span className="run-chip-short">{state}</span>
       {others > 0 && <span className="run-chip-more">+{others}</span>}

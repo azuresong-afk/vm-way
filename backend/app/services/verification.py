@@ -10,17 +10,19 @@
 3. Цели, отклонённые allowlist «Сканера», получают «не проверено: вне allowlist».
 
 Номер прогона «Сканера» сохраняется сразу после запуска: после рестарта задача не запускает
-второй прогон, а продолжает ждать первый.
+второй прогон, а продолжает ждать первый. Ожидание не занимает поток пула: пока прогон идёт, задача
+откладывает сама себя (`jobs.Defer`) и планировщик вызывает её снова через `VM_VERIFY_POLL_SECONDS`.
+Временная ошибка «Сканера» повторяется (app/jobs.py); окончательная переводит проверку в «не выполнена».
 
 Проверка не остаётся «в работе» навсегда:
-- сбой связи со «Сканером» во время ожидания не роняет задачу — она ждёт дальше до общего срока
-  (`verify_timeout_minutes`), затем проверка получает статус `failed` с причиной;
-- любой другой сбой задачи переводит проверку в `failed` (обработчик сбоя и сверка при старте);
+- сбой связи со «Сканером» при опросе идущего прогона не тратит попытки задачи — она ждёт дальше
+  до общего срока (`verify_timeout_minutes`), затем проверка получает статус `failed` с причиной;
+- окончательный сбой задачи переводит проверку в `failed` (`failed_job`), сверка при старте службы
+  делает то же для проверок, чья задача уже не исполняется (`fail_orphaned`);
 - проверку можно отменить (`cancel`): статус `cancelled`, прогон «Сканера» останавливается.
 """
 
 import logging
-import time
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -314,11 +316,6 @@ def _locked(db: Session, verification_id: int) -> Verification | None:
     ).first()
 
 
-def _transient(e: ScannerError) -> bool:
-    """Сбой, который может пройти сам: нет связи, ошибка на стороне «Сканера», просьба подождать."""
-    return e.status is None or e.status >= 500 or e.status in (408, 429)
-
-
 def _stop_run(client, scanner_run_id: int) -> str:  # noqa: ANN001
     """Просит «Сканер» остановить прогон. Возвращает текст ошибки или пустую строку."""
     try:
@@ -329,7 +326,10 @@ def _stop_run(client, scanner_run_id: int) -> str:  # noqa: ANN001
     return ""
 
 
-def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
+def execute(db: Session, verification_id: int) -> dict:
+    """Один шаг проверки: запустить прогон, если ещё не запущен, и, если он завершён, импортировать.
+
+    Пока прогон идёт, бросает `jobs.Defer` — задача `verify` вызовет шаг снова, не занимая поток."""
     s = get_settings()
     v = db.get(Verification, verification_id, populate_existing=True)
     if v is None:
@@ -368,8 +368,7 @@ def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
                 _finish(db, v, hosts, None)
                 db.commit()
                 return verification_out(v)
-            _fail(db, v, str(e))
-            db.commit()
+            # Временную ошибку задача повторит; окончательную доведёт до статуса failed_job().
             raise
         v = _locked(db, verification_id)
         v.scanner_run_id = int(created["id"])
@@ -383,42 +382,26 @@ def execute(db: Session, verification_id: int, *, sleep=time.sleep) -> dict:
         _mark_denied(db, v, v.denied_targets)
         db.commit()
 
-    # Ждём завершения прогона. Между опросами соединение с БД не держим.
-    scanner_run_id = v.scanner_run_id
-    deadline = as_utc(v.created_at) + timedelta(minutes=s.verify_timeout_minutes)
-    while True:
-        status = db.scalar(select(Verification.status).where(Verification.id == verification_id))
-        db.rollback()
-        if status not in ACTIVE:  # отменена или уже завершена
-            return verification_out(db.get(Verification, verification_id))
-        trouble = ""
-        try:
-            meta = client.run(scanner_run_id)
-            if meta["status"] in FINISHED_STATUSES:
-                return _complete(db, verification_id, link, client)
-        except ScannerError as e:
-            db.rollback()
-            if not _transient(e):
-                v = _locked(db, verification_id)
-                if v.status in ACTIVE:
-                    _fail(db, v, str(e))
-                db.commit()
-                return verification_out(v)
-            # Сбой связи — не повод ронять проверку: «Сканер» мог перезапускаться. Ждём дальше.
-            trouble = str(e)
-            log.warning("Проверка %s: прогон %s пока не получен: %s", verification_id, scanner_run_id, e)
+    # Прогон ещё идёт — не ждём в потоке: задача вернётся сюда через verify_poll_seconds.
+    trouble = ""
+    try:
+        meta = client.run(v.scanner_run_id)
+    except ScannerError as e:
+        if not e.transient:
+            raise
+        # Сбой связи — не повод ронять проверку: «Сканер» мог перезапускаться. Ждём до общего срока.
+        meta, trouble = None, str(e)
+        log.warning("Проверка %s: прогон %s пока не получен: %s", v.id, v.scanner_run_id, e)
+    if meta is None or meta["status"] not in FINISHED_STATUSES:
+        deadline = as_utc(v.created_at) + timedelta(minutes=s.verify_timeout_minutes)
         if utcnow() > deadline:
-            v = _locked(db, verification_id)
-            if v.status in ACTIVE:
-                message = f"прогон №{scanner_run_id} не завершился за {s.verify_timeout_minutes} мин"
-                _fail(db, v, f"{message}; последняя ошибка: {trouble}" if trouble else message)
+            message = f"прогон №{v.scanner_run_id} не завершился за {s.verify_timeout_minutes} мин"
+            _fail(db, v, f"{message}; последняя ошибка: {trouble}" if trouble else message)
             db.commit()
             return verification_out(v)
-        sleep(s.verify_poll_seconds)
+        raise jobs.Defer(s.verify_poll_seconds)
 
-
-def _complete(db: Session, verification_id: int, link: SourceLink, client) -> dict:  # noqa: ANN001
-    """Прогон завершён: импорт и итог — в одной транзакции под блокировкой проверки."""
+    # Импорт и итог — под блокировкой проверки: отмена и итог не перетирают друг друга.
     v = _locked(db, verification_id)
     if v.status not in ACTIVE:
         db.rollback()
@@ -507,18 +490,6 @@ def cancel(db: Session, verification_id: int, actor: Actor, reason: str = "") ->
     return v
 
 
-def _orphan_message(error: str) -> str:
-    return "задача проверки прервана" + (f" ({error})" if error else "") + " — запустите проверку заново"
-
-
-@jobs.on_failure("verify")
-def _job_failed(db: Session, job: Job, error: str) -> None:
-    """Задача упала — проверка не остаётся «в работе»: иначе новую проверку заявки не запустить."""
-    v = _locked(db, int(job.payload["verification_id"]))
-    if v is not None and v.status in ACTIVE:
-        _fail(db, v, _orphan_message(error))
-
-
 @jobs.on_recover
 def fail_orphaned(db: Session) -> list[int]:
     """Сверка при старте: активные проверки, чья задача уже не исполняется, получают статус failed."""
@@ -528,12 +499,20 @@ def fail_orphaned(db: Session) -> list[int]:
         if jobs.alive(db, job_id):
             continue
         job = db.get(Job, job_id) if job_id else None
-        _fail(db, v, _orphan_message(job.error if job else ""))
+        why = f" ({job.error})" if job and job.error else ""
+        _fail(db, v, f"задача проверки прервана{why} — запустите проверку заново")
         out.append(v.id)
     return out
 
 
-@jobs.handler("verify")
+def failed_job(db: Session, job: Job, e: Exception) -> None:
+    """Задача проверки провалилась окончательно — проверка не остаётся висеть в «идёт»."""
+    v = _locked(db, int(job.payload["verification_id"]))
+    if v is not None and v.status in ACTIVE:
+        _fail(db, v, jobs.safe_error(e))
+
+
+@jobs.handler("verify", on_failed=failed_job)
 def _job_verify(db: Session, job: Job) -> dict:
     out = execute(db, int(job.payload["verification_id"]))
     return {"verification_id": out["id"], "status": out["status"], "scanner_run_id": out["scanner_run_id"]}

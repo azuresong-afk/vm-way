@@ -29,10 +29,18 @@ FIXES_PAGE = 500
 class ScannerError(Exception):
     """Ошибка обращения к «Сканеру» (текст безопасен для показа пользователю)."""
 
-    def __init__(self, message: str, status: int | None = None, detail: Any = None):
+    def __init__(self, message: str, status: int | None = None, detail: Any = None, transient: bool | None = None):
         super().__init__(message)
         self.status = status
         self.detail = detail
+        self._transient = transient
+
+    @property
+    def transient(self) -> bool:
+        """Временная ошибка (сеть, перегрузка, 5xx): повтор позже может пройти."""
+        if self._transient is not None:
+            return self._transient
+        return self.status in (408, 429) or (self.status or 0) >= 500
 
 
 class ScannerClient(Protocol):
@@ -80,7 +88,7 @@ class HttpScannerClient:
         try:
             r = self._http.post("/auth/token", json={"username": self._username, "password": self._password})
         except httpx.HTTPError as e:
-            raise ScannerError(f"«Сканер» недоступен: {type(e).__name__}") from e
+            raise ScannerError(f"«Сканер» недоступен: {type(e).__name__}", transient=True) from e
         if r.status_code != 200:
             raise ScannerError(f"Вход в «Сканер» не выполнен (HTTP {r.status_code})", r.status_code)
         self._token = r.json()["access_token"]
@@ -95,7 +103,7 @@ class HttpScannerClient:
                 r = self._http.request(method, path, headers=headers, **kw)
             except httpx.HTTPError as e:
                 if attempt == 2:
-                    raise ScannerError(f"«Сканер» недоступен: {type(e).__name__}") from e
+                    raise ScannerError(f"«Сканер» недоступен: {type(e).__name__}", transient=True) from e
                 time.sleep(self.retry_delay * (1 + attempt))
                 continue
             if r.status_code == 401 and attempt == 0:
@@ -111,7 +119,7 @@ class HttpScannerClient:
                     detail = None
                 raise ScannerError(f"«Сканер» ответил HTTP {r.status_code} на {method} {path}", r.status_code, detail)
             return r
-        raise ScannerError("«Сканер» не ответил")
+        raise ScannerError("«Сканер» не ответил", transient=True)
 
     def _get(self, path: str, **params: Any) -> Any:
         return self._request("GET", path, params={k: v for k, v in params.items() if v is not None}).json()

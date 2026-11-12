@@ -301,17 +301,17 @@ def test_restart_resumes_without_second_run(client, as_, db, users, project):
     mock = MockScanner.shared("demo")
     mock.running_polls = 5
 
-    def crash(_):
-        raise RuntimeError("служба остановлена")
-
-    with pytest.raises(RuntimeError):
-        verification.execute(db, v.id, sleep=crash)
+    # Прогон идёт: шаг проверки не ждёт в потоке, а откладывает задачу.
+    with pytest.raises(jobs.Defer):
+        verification.execute(db, v.id)
     db.expire_all()
     v = db.get(Verification, v.id)
     assert v.status == "running" and v.scanner_run_id is not None
     # После рестарта задача продолжает ждать тот же прогон.
-    out = verification.execute(db, v.id, sleep=lambda _: None)
-    assert out["status"] == "done" and out["result"]["outcome"] == "verified"
+    jobs.runner.recover()
+    db.expire_all()
+    v = db.get(Verification, v.id)
+    assert v.status == "done" and v.result["outcome"] == "verified"
     posts = [x for x in mock.requests if x[0] == "POST" and x[1] == "/engagements/7/runs"]
     assert len(posts) == 1
     assert db.get(Ticket, t.id).status == "verified"
@@ -400,7 +400,7 @@ def test_job_crash_does_not_leave_verification_running(client, as_, db, users, p
     [v] = r.json()["verifications"]
     assert _job(db, v).status == "failed"
     assert v["status"] == "failed" and v["scanner_run_id"] is not None
-    assert "задача проверки прервана" in v["error"] and "RuntimeError" in v["error"]
+    assert "RuntimeError" in v["error"]
     last = db.scalars(select(AuditLog).where(AuditLog.action == "ticket.verify_result").order_by(AuditLog.id.desc()))
     assert last.first().result == "error"
     monkeypatch.undo()
@@ -434,23 +434,21 @@ def test_cancel_running_verification(client, as_, db, users, project):
     vid = v.id
     mock = MockScanner.shared("demo")
     mock.running_polls = 10**6
-    seen = {}
-
-    def cancel_while_waiting(_):
-        card = client.get(f"/tickets/{t.id}", headers=as_("engineer")).json()
-        seen["can"] = card["verifications"][0]["can_cancel"]
-        seen["viewer"] = client.post(f"/verifications/{vid}/cancel", headers=as_("viewer")).status_code
-        seen["r"] = client.post(
-            f"/verifications/{vid}/cancel", headers=as_("manager"), json={"reason": "Хосты сняты с обслуживания"}
-        )
-
-    out = verification.execute(db, vid, sleep=cancel_while_waiting)
-    assert seen["can"] is True and seen["viewer"] == 403
-    assert seen["r"].status_code == 200, seen["r"].text
-    body = seen["r"].json()
+    # Прогон идёт, задача отложена — в это время проверку отменяют.
+    with pytest.raises(jobs.Defer):
+        verification.execute(db, vid)
+    card = client.get(f"/tickets/{t.id}", headers=as_("engineer")).json()
+    assert card["verifications"][0]["can_cancel"] is True
+    assert client.post(f"/verifications/{vid}/cancel", headers=as_("viewer")).status_code == 403
+    r = client.post(
+        f"/verifications/{vid}/cancel", headers=as_("manager"), json={"reason": "Хосты сняты с обслуживания"}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    out = verification.execute(db, vid)
     assert body["status"] == "cancelled" and body["can_cancel"] is False
     assert body["result"]["cancel_reason"] == "Хосты сняты с обслуживания"
-    # Задача увидела отмену и вышла, итог не применён; прогон «Сканера» остановлен.
+    # Следующий шаг задачи видит отмену и выходит, итог не применён; прогон «Сканера» остановлен.
     assert out["status"] == "cancelled" and out["run_id"] is None
     assert ("POST", f"/runs/{out['scanner_run_id']}/stop", None) in mock.requests
     assert mock._runs[out["scanner_run_id"]]["run"]["status"] == "stopped"

@@ -10,6 +10,7 @@ import { AssetsPage } from "./pages/AssetsPage";
 import { ExceptionsPage } from "./pages/ExceptionsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MyTasksPage } from "./pages/MyTasksPage";
+import { PasswordChangePage } from "./pages/PasswordChangePage";
 import { RolloutPage } from "./pages/RolloutPage";
 import { RolloutsPage } from "./pages/RolloutsPage";
 import { RulesPage } from "./pages/RulesPage";
@@ -30,6 +31,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
     const next = location.pathname + location.search;
     return <Navigate to={next === "/" ? "/login" : `/login?next=${encodeURIComponent(next)}`} replace />;
   }
+  // Сервер до смены пароля всё равно отвечает 403 на любые рабочие запросы.
+  if (me.must_change_password) return <PasswordChangePage />;
   return <>{children}</>;
 }
 

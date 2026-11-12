@@ -18,7 +18,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import audit
-from app.db import utcnow
+from app.db import lock_project, utcnow
 from app.integrations.scanner import ScannerClient, ScannerError
 from app.models import Asset, AssetGroup, AssetGroupMember, SourceLink, User
 
@@ -105,6 +105,8 @@ def sync_project(db: Session, project_id: str, *, actor: User | None = None, ip:
     """Полная синхронизация по всем привязкам проекта (кнопка «Обновить из «Сканера»»)."""
     from app.services.importer import client_for
 
+    # Импорт прогона тоже переносит активы и группы — не пересекаемся с ним.
+    lock_project(db, project_id)
     links = list(db.scalars(select(SourceLink).where(SourceLink.project_id == project_id)))
     total = {"assets": 0, "created": 0, "updated": 0, "removed": 0, "groups_removed": 0, "errors": []}
     names: set[str] = set()

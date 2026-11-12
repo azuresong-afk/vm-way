@@ -125,7 +125,8 @@ export function errorText(detail: unknown, fallback: string): string {
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const sent = token;
+  if (sent) headers.set("Authorization", `Bearer ${sent}`);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   let res: Response;
   try {
@@ -141,7 +142,8 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   } catch {
     detail = undefined;
   }
-  if (res.status === 401 && token) {
+  // Ответ на запрос со старым токеном (например, отправленный до смены пароля) новую сессию не сбрасывает.
+  if (res.status === 401 && token && token === sent) {
     setToken(null);
     onUnauthorized?.();
   }
@@ -181,6 +183,8 @@ export const api = {
   login: (username: string, password: string) => json<TokenOut>("/auth/token", post({ username, password })),
   logout: () => json<{ ok: boolean }>("/auth/logout", post()),
   me: () => json<MeOut>("/me"),
+  changePassword: (current_password: string, new_password: string) =>
+    json<TokenOut>("/me/password", post({ current_password, new_password })),
 
   projects: (includeArchived = false) =>
     json<ProjectOut[]>(`/projects${listQuery({ include_archived: includeArchived || undefined, limit: 500 })}`),

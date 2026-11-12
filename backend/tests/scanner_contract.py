@@ -2,9 +2,15 @@
 
 Нужны, чтобы мок и демо-фикстура не разошлись с настоящим API: тест прогоняет ответы мока
 через эти схемы с запретом лишних полей. При изменении API «Сканера» обновите схемы здесь.
+
+Копия сверяется с оригиналом автоматически: `python -m tests.scanner_contract_check <schemas.py>`
+(по расписанию в CI, .github/workflows/scanner-contract.yml). Сверяются имена и типы полей,
+поэтому типы пишите так же, как в «Сканере». Значения по умолчанию не сверяются: API «Сканера»
+отдаёт все поля, и здесь поле без умолчания заставляет мок отдавать его тоже.
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -19,6 +25,8 @@ class MeOut(_Strict):
     display_name: str | None
     is_active: bool
     roles: list[str]
+    auth_source: str
+    mfa_enabled: bool
     permissions: list[str]
 
 
@@ -60,12 +68,16 @@ class RunOut(_Strict):
     options: dict
     warnings: list[dict]
     progress: dict | None = None
+    # Узел-сканер, на котором исполняется прогон; None — центр.
+    node_id: int | None
+    node_name: str | None
+    node_mode: str | None
 
 
 class DeniedTargetOut(_Strict):
     target: str
     reason: str
-    count: int = 1
+    count: int
 
 
 class RunCreated(RunOut):
@@ -207,13 +219,16 @@ class AssetGroupRef(_Strict):
     name: str
 
 
+Criticality = Literal["low", "medium", "high", "critical"]
+
+
 class AssetOut(_Strict):
     id: int
     engagement_id: int
     address: str
     hostname: str | None
     owner: str | None
-    criticality: str
+    criticality: Criticality
     notes: str | None
     tags: list[str]
     groups: list[AssetGroupRef]

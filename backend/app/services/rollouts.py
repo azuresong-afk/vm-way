@@ -1228,15 +1228,14 @@ def abort(db: Session, r: Rollout, error: str, *, final: str = "failed") -> None
             log.exception("Раскатка %s: итог не записан, повтор без запуска повторной проверки", rollout_id)
 
 
-@jobs.on_failure("rollout", "rollout_dry_run")
-def _job_failed(db: Session, job: Job, error: str) -> None:
+def failed_job(db: Session, job: Job, e: Exception) -> None:
     """Задача упала на непредвиденной ошибке — раскатка не остаётся «Идёт»."""
     r = db.get(Rollout, int(job.payload["rollout_id"]))
     expected = "running" if job.kind == "rollout" else "dry_run"
     if r is None or r.job_id != job.id or r.status != expected:
         return
     what = "Раскатка прервана" if job.kind == "rollout" else "Пробный прогон прерван"
-    abort(db, r, f"{what} сбоем задачи: {error}")
+    abort(db, r, f"{what} сбоем задачи: {jobs.safe_error(e)}")
 
 
 @jobs.on_recover
@@ -1252,12 +1251,12 @@ def abort_orphaned(db: Session) -> list[int]:
     return out
 
 
-@jobs.handler("rollout_dry_run")
+@jobs.handler("rollout_dry_run", pool="long", retry=False, on_failed=failed_job)
 def _job_dry_run(db: Session, job: Job) -> dict:
     return execute_dry_run(db, int(job.payload["rollout_id"]))
 
 
-@jobs.handler("rollout")
+@jobs.handler("rollout", pool="long", retry=False, on_failed=failed_job)
 def _job_rollout(db: Session, job: Job) -> dict:
     return execute(db, int(job.payload["rollout_id"]))
 
