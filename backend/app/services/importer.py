@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import audit, jobs
-from app.db import as_utc, utcnow
+from app.db import as_utc, lock_project, utcnow
 from app.integrations.scanner import FINISHED_STATUSES, ScannerClient, ScannerError, make_client
 from app.models import Job, Project, RunCoverage, ScannerSource, ScanRun, SourceLink, User, Verification
 from app.security import decrypt_secret
@@ -105,10 +105,17 @@ def import_run(
 ) -> tuple[ScanRun, bool]:
     """Импортирует один прогон. Возвращает (запись прогона, создана ли она сейчас).
 
-    targets и strict_tickets — для прицельной проверки (см. closure.apply)."""
-    existing = db.scalar(
-        select(ScanRun).where(ScanRun.source_id == link.source_id, ScanRun.scanner_run_id == scanner_run_id)
-    )
+    targets и strict_tickets — для прицельной проверки (см. closure.apply).
+
+    Импорты одного проекта идут по очереди (lock_project): блокировка держится до commit
+    или rollback вызывающего, поэтому фиксировать транзакцию нужно сразу после импорта."""
+    known = select(ScanRun).where(ScanRun.source_id == link.source_id, ScanRun.scanner_run_id == scanner_run_id)
+    existing = db.scalar(known)
+    if existing:
+        return existing, False
+    lock_project(db, link.project_id)
+    # Пока ждали блокировку, этот же прогон мог импортировать параллельный импорт.
+    existing = db.scalar(known)
     if existing:
         return existing, False
     client = client or client_for(link.source)
@@ -145,12 +152,10 @@ def import_run(
     try:
         db.flush()
     except IntegrityError:
-        # Тот же прогон импортировали параллельно — берём сохранённую запись.
+        # Страховка на случай, когда блокировки нет (не PostgreSQL): тот же прогон импортировали
+        # параллельно — берём сохранённую запись.
         db.rollback()
-        existing = db.scalar(
-            select(ScanRun).where(ScanRun.source_id == link.source_id, ScanRun.scanner_run_id == scanner_run_id)
-        )
-        return existing, False
+        return db.scalar(known), False
     # Активы — до заявок: правила назначения смотрят на группы, теги и владельцев хостов.
     run.stats = {**run.stats, **sync_assets(db, link, client)}
     for c in results.coverage:

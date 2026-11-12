@@ -58,8 +58,10 @@ def test_postgres_upgrade_and_audit_trigger():
     url = os.environ.get("VM_TEST_PG_URL")
     if not url:
         pytest.skip("VM_TEST_PG_URL не задан")
+    from tests.conftest import reset_pg_schema
+
+    reset_pg_schema(url)  # в базе могла остаться схема предыдущего теста
     cfg = _cfg(url)
-    command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
     engine = create_engine(url)
     with engine.connect() as conn:

@@ -54,8 +54,9 @@ cd backend
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 ruff check . && ruff format --check . && pytest -q
-# Миграции на PostgreSQL (необязательно):
-VM_TEST_PG_URL=postgresql+psycopg://vm:vm@127.0.0.1:5432/vm pytest -q tests/test_migrations.py
+# Все тесты на PostgreSQL (необязательно; так же идёт CI). Нужна отдельная пустая база:
+# схема public в ней пересоздаётся перед каждым тестом.
+VM_TEST_ON_PG=1 VM_TEST_PG_URL=postgresql+psycopg://vm:vm@127.0.0.1:5432/vm_test pytest -q
 ```
 
 Демо-фикстура «Сканера» генерируется скриптом и проверяется в CI на совпадение:
