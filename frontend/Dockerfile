@@ -13,7 +13,7 @@ ARG VITE_API_BASE=/api
 ENV VITE_BASE=$VITE_BASE VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 ENV API_UPSTREAM=http://app:8000 TRUSTED_PROXY=127.0.0.1
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
