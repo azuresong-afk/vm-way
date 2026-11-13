@@ -13,3 +13,7 @@ asyncssh==2.24.1
 # Зашифрованные парольной фразой ключи OpenSSH (KDF bcrypt).
 bcrypt==4.3.0
 tzdata==2025.2
+# Отчёты (задача 3.1): HTML-шаблон, PDF (нужны libpango в образе), DOCX.
+Jinja2==3.1.6
+weasyprint==65.1
+python-docx==1.2.0

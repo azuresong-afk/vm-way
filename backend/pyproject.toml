@@ -17,6 +17,9 @@ dependencies = [
   "asyncssh>=2.24",
   "bcrypt>=4",
   "tzdata>=2024.1",
+  "jinja2>=3.1",
+  "weasyprint>=62",
+  "python-docx>=1.1",
 ]
 
 [project.optional-dependencies]

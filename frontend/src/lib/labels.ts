@@ -167,6 +167,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "window.update": "Окно изменено",
   "window.delete": "Окно удалено",
   "audit.export": "Выгрузка журнала",
+  "report.export": "Выгрузка отчёта",
   "rollout.create": "Раскатка подготовлена",
   "rollout.dry_run": "Пробный прогон",
   "rollout.dry_run_result": "Итог пробного прогона",

@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { App } from "./App";
 import { setToken } from "./api/client";
 import { AuthProvider } from "./auth/AuthContext";
-import type { ExceptionOut } from "./api/types";
+import type { ExceptionOut, ReportOut } from "./api/types";
 import { mockApi } from "./test/fetchMock";
 import { brief, detail, engineer, manager, me, project, windowOut, windowPlan } from "./test/fixtures";
 
@@ -908,5 +908,128 @@ describe("исключения", () => {
     await user.click(within(dialog).getByRole("button", { name: "Утвердить" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/exceptions/9/approve")).toBe(true));
     expect(calls.find((c) => c.path === "/exceptions/9/approve")!.body).toEqual({ note: "Согласовано" });
+  });
+});
+
+describe("отчёты", () => {
+  beforeEach(() => setToken("t"));
+  const zero = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  const report: ReportOut = {
+    context: {
+      title: "Отчёт о ходе устранения уязвимостей",
+      project: { id: "p1", name: "Демо", client: "АО «Порт»", contract_ref: "" },
+      period: { from: "2026-09-01", to: "2026-11-05", days: 66, timezone: "Europe/Moscow", label: "01.09.2026 – 05.11.2026" },
+      variant: "full",
+      generated_at: "2026-11-06T10:00:00Z",
+      author: "Наблюдатель",
+      deadlines: false,
+      tickets_as_of_now: false,
+    },
+    totals: {
+      vulns: { start: 0, appeared: 74, regression: 1, fixed: 11, end: 64 },
+      tickets_total: 14,
+      tickets_open: 13,
+      tickets_verified: 1,
+      tickets_exceptions: 0,
+      hosts_unverified: 2,
+    },
+    by_severity: [
+      { severity: "critical", label: "Критический", start: 0, appeared: 22, regression: 1, fixed: 2, end: 21 },
+      { severity: "high", label: "Высокий", start: 0, appeared: 30, regression: 0, fixed: 1, end: 29 },
+    ],
+    weeks: [{ start: "2026-09-07", opened: { ...zero, critical: 22 }, closed: zero }],
+    runs: [
+      {
+        id: 3,
+        scanner_run_id: 102,
+        name: "Плановый прогон — ноябрь",
+        kind: "scheduled",
+        kind_label: "Плановый",
+        finished_at: "2026-11-02T21:52:00Z",
+        finished_local: "03.11.2026",
+        url: "",
+        appeared: 2,
+        regression: 1,
+        fixed: 9,
+      },
+    ],
+    assignees: [{ name: "Смирнов Д. В.", open: 2, in_work: 1, awaiting_check: 1, verified: 1, open_vulns: 7, fixed_vulns: 8, by_severity: zero }],
+    groups: [{ name: "DMZ", hosts: 4, start: 0, appeared: 24, regression: 0, fixed: 4, end: 20 }],
+    top_hosts: [],
+    verified: [
+      {
+        id: 12,
+        title: "Обновить sudo на Debian 12",
+        kind: "package",
+        kind_label: "Пакет",
+        os: "Debian 12",
+        severity: "medium",
+        status: "verified",
+        status_label: "Подтверждено",
+        assignee: null,
+        is_regression: false,
+        hosts: 8,
+        hosts_confirmed: 8,
+        hosts_unverified: 0,
+        open_vulns: 0,
+        fixed_vulns: 8,
+        closed_at: "2026-11-02T21:52:00Z",
+        closed_local: "03.11.2026",
+        evidence: { scanner_run_id: 102, run_name: "", kind: "scheduled", finished_at: null, url: "" },
+      },
+    ],
+    remaining: [],
+    exceptions: [],
+    key_points: ["За период прогоны «Сканера» подтвердили исправление: 11 уязвимостей, появилось новых: 74."],
+  };
+
+  it("наблюдатель смотрит предпросмотр, меняет вариант и период и скачивает PDF", async () => {
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:x"), revokeObjectURL: vi.fn() }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const calls = mockApi({
+      "/me": me(["viewer"], ["view"]),
+      "/projects": [{ ...project, period_from: "2026-09-01", period_to: "2026-12-31" }],
+      "/projects/p1/jobs": [],
+      "/projects/p1/report": report,
+    });
+    renderAt("/reports");
+    expect(await screen.findByRole("heading", { name: "Отчёты" })).toBeInTheDocument();
+    expect(await screen.findByText(report.key_points[0])).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Смирнов Д. В." })).toBeInTheDocument();
+    expect(screen.getByText(/№12 · Обновить sudo/)).toBeInTheDocument();
+    const user = userEvent.setup();
+    const reportCalls = () => calls.filter((c) => c.path.startsWith("/projects/p1/report"));
+    expect(reportCalls()[0].path).toContain("format=json");
+    expect(reportCalls()[0].path).toContain("download=0");
+
+    await user.click(screen.getByRole("radio", { name: "Срок договора" }));
+    await user.click(screen.getByRole("radio", { name: "Краткий" }));
+    await waitFor(() => expect(reportCalls().at(-1)!.path).toContain("variant=brief"));
+    expect(reportCalls().at(-1)!.path).toContain("from=2026-09-01");
+
+    await user.click(screen.getByRole("button", { name: /PDF/ }));
+    await waitFor(() => expect(click).toHaveBeenCalled());
+    const file = reportCalls().at(-1)!.path;
+    expect(file).toContain("format=pdf");
+    expect(file).not.toContain("download=0");
+    click.mockRestore();
+  });
+
+  it("неверный период не отправляется", async () => {
+    const calls = mockApi({
+      "/me": me(["viewer"], ["view"]),
+      "/projects": [project],
+      "/projects/p1/jobs": [],
+      "/projects/p1/report": report,
+    });
+    renderAt("/reports");
+    await screen.findByText(report.key_points[0]);
+    const before = calls.filter((c) => c.path.startsWith("/projects/p1/report")).length;
+    const from = screen.getByLabelText("С");
+    await userEvent.setup().clear(from);
+    expect(await screen.findByText("Укажите обе даты периода")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /PDF/ })).toBeDisabled();
+    expect(calls.filter((c) => c.path.startsWith("/projects/p1/report")).length).toBe(before);
+    expect(screen.queryByRole("radio", { name: "Срок договора" })).not.toBeInTheDocument();
   });
 });

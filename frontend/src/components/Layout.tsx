@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   CalendarClock,
   ClipboardList,
+  FileText,
   FolderKanban,
   KeyRound,
   LayoutDashboard,
@@ -46,6 +47,7 @@ const NAV: NavItem[] = [
   { to: "/windows", label: "Окна и план", icon: <CalendarClock size={18} />, perm: "view" },
   { to: "/rollouts", label: "Раскатки", icon: <Rocket size={18} />, perm: "view" },
   { to: "/exceptions", label: "Исключения", icon: <ShieldOff size={18} />, perm: "view" },
+  { to: "/reports", label: "Отчёты", icon: <FileText size={18} />, perm: "view" },
   { to: "/assets", label: "Активы", icon: <Server size={18} />, perm: "view" },
   { to: "/rules", label: "Правила назначения", icon: <Workflow size={18} />, perm: "rules_manage" },
   { to: "/access", label: "Доступ к хостам", icon: <KeyRound size={18} />, perm: "credentials_manage" },

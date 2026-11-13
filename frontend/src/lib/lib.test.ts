@@ -1,5 +1,6 @@
 import { fmtDate, fmtDay, plural, safeNext } from "./format";
 import { reasonRequired } from "./labels";
+import { isoDay, presetRange } from "./reportPeriod";
 import { savedTheme } from "../theme/ThemeContext";
 
 describe("формат", () => {
@@ -36,5 +37,26 @@ describe("тема", () => {
     expect(savedTheme()).toBe("light");
     localStorage.setItem("platform.theme", "dark");
     expect(savedTheme()).toBe("dark");
+  });
+});
+
+describe("период отчёта", () => {
+  const p = { ...{ id: "p1", name: "Демо", client: "", contract_ref: "", status: "active" as const, platform_project_id: null, created_at: "" } };
+  it("пресеты считаются от сегодняшнего дня включительно", () => {
+    const proj = { ...p, period_from: null, period_to: null };
+    expect(presetRange("month", "2026-11-06", proj)).toEqual({ from: "2026-10-08", to: "2026-11-06" });
+    expect(presetRange("3m", "2026-11-06", proj)).toEqual({ from: "2026-08-08", to: "2026-11-06" });
+    expect(presetRange("year", "2026-03-01", proj)).toEqual({ from: "2025-03-02", to: "2026-03-01" });
+  });
+  it("срок договора — даты проекта, но не позже сегодня", () => {
+    expect(presetRange("contract", "2026-11-06", { ...p, period_from: "2026-09-01", period_to: "2026-12-31" })).toEqual({
+      from: "2026-09-01",
+      to: "2026-11-06",
+    });
+    expect(presetRange("contract", "2026-11-06", { ...p, period_from: "2026-01-01", period_to: "2026-06-30" })).toEqual({
+      from: "2026-01-01",
+      to: "2026-06-30",
+    });
+    expect(isoDay(new Date(2026, 0, 5))).toBe("2026-01-05");
   });
 });
