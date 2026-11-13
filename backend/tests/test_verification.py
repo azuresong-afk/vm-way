@@ -1,5 +1,6 @@
 """Задача 1.6: автозакрытие по импорту, регрессии и повторная проверка прицельным прогоном."""
 
+import httpx
 import pytest
 from sqlalchemy import func, select
 
@@ -8,6 +9,7 @@ from app.integrations.scanner import MockScanner
 from app.models import (
     AuditLog,
     Comment,
+    Job,
     Outbox,
     ScanRun,
     Ticket,
@@ -313,3 +315,154 @@ def test_restart_resumes_without_second_run(client, as_, db, users, project):
     assert len(posts) == 1
     assert db.get(Ticket, t.id).status == "verified"
     assert db.scalar(select(func.count()).select_from(TicketHost).where(TicketHost.status == "confirmed")) >= 6
+
+
+# --- устойчивость: сбои «Сканера» и задачи, отмена (задача А ревью 2026-11) ---
+
+
+def _outage(monkeypatch, calls: int, status: int = 503):
+    """Первые `calls` запросов состояния прогона «Сканер» отвечает ошибкой."""
+    real = MockScanner._run_meta
+    left = {"n": calls}
+
+    def flaky(self, run_id):
+        if left["n"] > 0:
+            left["n"] -= 1
+            return httpx.Response(status, json={"detail": "сбой"})
+        return real(self, run_id)
+
+    monkeypatch.setattr(MockScanner, "_run_meta", flaky)
+    return left
+
+
+def _job(db, v: dict | Verification) -> Job:
+    result = v["result"] if isinstance(v, dict) else v.result
+    db.expire_all()
+    return db.get(Job, result["job_id"])
+
+
+def test_permanent_scanner_error_fails_at_once(client, as_, db, users, project, monkeypatch):
+    _import(client, as_, project["id"])
+    t = _ticket(db, SSL_DEB)
+    left = _outage(monkeypatch, 10**6, status=404)
+    r = _start(client, as_, users, t.id)
+    [v] = r.json()["verifications"]
+    assert v["status"] == "failed" and "HTTP 404" in v["error"]
+    assert left["n"] == 10**6 - 1  # прогона в «Сканере» нет — ждать нечего
+
+
+def test_job_crash_does_not_leave_verification_running(client, as_, db, users, project, monkeypatch):
+    """Ошибка 1.1 ревью: задача упала, проверка осталась running, новая проверка получала 409."""
+    _import(client, as_, project["id"])
+    t = _ticket(db, SSL_DEB)
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("обрыв соединения с БД")
+
+    monkeypatch.setattr(verification.importer, "import_run", boom)
+    r = _start(client, as_, users, t.id)
+    assert r.status_code == 202, r.text
+    [v] = r.json()["verifications"]
+    assert _job(db, v).status == "failed"
+    assert v["status"] == "failed" and v["scanner_run_id"] is not None
+    assert "RuntimeError" in v["error"]
+    last = db.scalars(select(AuditLog).where(AuditLog.action == "ticket.verify_result").order_by(AuditLog.id.desc()))
+    assert last.first().result == "error"
+    monkeypatch.undo()
+    r2 = client.post(f"/tickets/{t.id}/verify", headers=as_("engineer"), json={})
+    assert r2.status_code == 202, r2.text
+    assert r2.json()["verifications"][0]["result"]["outcome"] == "verified"
+
+
+def test_recover_fails_verifications_without_live_job(client, as_, db, users, project):
+    """Проверки, зависшие до исправления: задача failed, проверка running — сверка при старте их закрывает."""
+    _import(client, as_, project["id"])
+    t = _ticket(db, SSL_DEB)
+    [v] = verification.request(db, t, Actor(users["engineer"], {"verify", "ticket_work"}))
+    v.status, v.scanner_run_id = "running", 4242
+    job = db.get(Job, v.result["job_id"])
+    job.status, job.error = "failed", "«Сканер» недоступен: ConnectError"
+    db.commit()
+    assert client.post(f"/tickets/{t.id}/verify", headers=as_("engineer"), json={}).status_code == 409
+    jobs.runner.recover()
+    db.expire_all()
+    v = db.get(Verification, v.id)
+    assert v.status == "failed" and "ConnectError" in v.error and v.finished_at is not None
+    assert client.post(f"/tickets/{t.id}/verify", headers=as_("engineer"), json={}).status_code == 202
+
+
+def test_cancel_running_verification(client, as_, db, users, project):
+    _import(client, as_, project["id"])
+    t = _ticket(db, SSL_DEB)
+    [v] = verification.request(db, t, Actor(users["engineer"], {"verify", "ticket_work"}))
+    db.commit()
+    vid = v.id
+    mock = MockScanner.shared("demo")
+    mock.running_polls = 10**6
+    # Прогон идёт, задача отложена — в это время проверку отменяют.
+    with pytest.raises(jobs.Defer):
+        verification.execute(db, vid)
+    card = client.get(f"/tickets/{t.id}", headers=as_("engineer")).json()
+    assert card["verifications"][0]["can_cancel"] is True
+    assert client.post(f"/verifications/{vid}/cancel", headers=as_("viewer")).status_code == 403
+    r = client.post(
+        f"/verifications/{vid}/cancel", headers=as_("manager"), json={"reason": "Хосты сняты с обслуживания"}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    out = verification.execute(db, vid)
+    assert body["status"] == "cancelled" and body["can_cancel"] is False
+    assert body["result"]["cancel_reason"] == "Хосты сняты с обслуживания"
+    # Следующий шаг задачи видит отмену и выходит, итог не применён; прогон «Сканера» остановлен.
+    assert out["status"] == "cancelled" and out["run_id"] is None
+    assert ("POST", f"/runs/{out['scanner_run_id']}/stop", None) in mock.requests
+    assert mock._runs[out["scanner_run_id"]]["run"]["status"] == "stopped"
+    db.expire_all()
+    assert db.get(Ticket, t.id).status == "new"  # статус заявки отмена не трогает
+    comment = db.scalars(select(Comment.body).order_by(Comment.id.desc())).first()
+    assert "отменена (Manager): Хосты сняты с обслуживания" in comment and "остановлен" in comment
+    actions = db.scalars(select(AuditLog.action).where(AuditLog.object_id == str(t.id))).all()
+    assert "ticket.verify_cancel" in actions
+    history = client.get(f"/tickets/{t.id}/history", headers=as_("viewer")).json()
+    assert "verify_cancelled" in str(history)
+    # Повторная отмена — нечего отменять; новая проверка запускается.
+    assert client.post(f"/verifications/{vid}/cancel", headers=as_("manager")).status_code == 409
+    mock.running_polls = 0
+    r = client.post(f"/tickets/{t.id}/verify", headers=as_("engineer"), json={})
+    assert r.status_code == 202 and r.json()["verifications"][0]["status"] == "done"
+
+
+def test_cancel_before_start_and_rights(client, as_, db, users, project):
+    _import(client, as_, project["id"])
+    t = _ticket(db, SSL_DEB)
+    [v] = verification.request(db, t, Actor(users["manager"], {"verify", "ticket_work"}))
+    db.commit()
+    # Исполнитель отменяет только свою проверку; руководитель — любую.
+    r = client.post(f"/verifications/{v.id}/cancel", headers=as_("engineer"))
+    assert r.status_code == 403 and "руководитель" in r.json()["detail"]
+    assert client.post(f"/verifications/{v.id}/cancel", headers=as_("manager")).json()["status"] == "cancelled"
+    mock = MockScanner.shared("demo")
+    out = verification.execute(db, v.id)
+    assert out["status"] == "cancelled" and out["scanner_run_id"] is None
+    assert not [x for x in mock.requests if x[0] == "POST" and x[1] != "/auth/token"]
+    assert client.post("/verifications/999999/cancel", headers=as_("manager")).status_code == 404
+
+
+def test_cancel_while_scanner_accepts_run(client, as_, db, users, project, monkeypatch):
+    """Отмена пришла, пока «Сканер» принимал запуск: статус не перетирается, прогон останавливается."""
+    _import(client, as_, project["id"])
+    t = _ticket(db, SSL_DEB)
+    [v] = verification.request(db, t, Actor(users["engineer"], {"verify", "ticket_work"}))
+    db.commit()
+    real = MockScanner._start_run
+
+    def start_then_cancel(self, eid, body):
+        out = real(self, eid, body)
+        assert client.post(f"/verifications/{v.id}/cancel", headers=as_("engineer")).status_code == 200
+        return out
+
+    monkeypatch.setattr(MockScanner, "_start_run", start_then_cancel)
+    out = verification.execute(db, v.id)
+    assert out["status"] == "cancelled" and out["scanner_run_id"] is not None
+    mock = MockScanner.shared("demo")
+    assert mock._runs[out["scanner_run_id"]]["run"]["status"] == "stopped"

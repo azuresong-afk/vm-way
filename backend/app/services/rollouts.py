@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import logging
 import math
 import shlex
 import time
@@ -59,6 +60,8 @@ from app.rbac import Perm, perms_for
 from app.services import credentials, importer, sshexec, verification, windows, workflow
 from app.services import rollout_templates as tpl
 from app.services.workflow import CLOSED_STATUSES, Actor, WorkflowError
+
+log = logging.getLogger("vm.rollouts")
 
 STATUSES = {
     "draft": "Черновик",
@@ -624,6 +627,9 @@ def request_stop(db: Session, r: Rollout, actor: Actor, reason: str) -> None:
     r.updated_at = utcnow()
     _audit(db, r, actor.user, "rollout.stop", actor.ip, reason=r.stop_reason)
     _history(db, r, actor.user, "rollout_stop", reason=r.stop_reason)
+    if not jobs.alive(db, r.job_id):
+        # Задача раскатки уже не исполняется — флаг стопа некому прочитать: завершаем раскатку сразу.
+        abort(db, r, "Задача раскатки не исполнялась — раскатка остановлена", final="stopped")
 
 
 # ---------- исполнение на хосте ----------
@@ -1137,7 +1143,7 @@ def execute(db: Session, rollout_id: int) -> dict:
     return _finish(db, r, final, error)
 
 
-def _finish(db: Session, r: Rollout, final: str, error: str) -> dict:
+def _finish(db: Session, r: Rollout, final: str, error: str, *, verify: bool = True) -> dict:
     r.error = error[:2000]
     r.finished_at = utcnow()
     counts = _summary(r)
@@ -1155,7 +1161,7 @@ def _finish(db: Session, r: Rollout, final: str, error: str) -> dict:
         parts.append(error)
     started_by = db.get(User, r.started_by) if r.started_by else None
     job_ids: list[int] = []
-    if ok_hosts and t is not None and t.status not in CLOSED_STATUSES and started_by is not None:
+    if verify and ok_hosts and t is not None and t.status not in CLOSED_STATUSES and started_by is not None:
         try:
             items = verification.request(db, t, _actor_of(started_by), ok_hosts, mark_fixed=True)
         except WorkflowError as e:
@@ -1186,12 +1192,71 @@ def _finish(db: Session, r: Rollout, final: str, error: str) -> dict:
     return rollout_brief(r)
 
 
-@jobs.handler("rollout_dry_run", pool="long", retry=False)
+INTERRUPTED = "Работа с хостом прервана сбоем службы «Устранения» — проверьте хост вручную"
+
+
+def abort(db: Session, r: Rollout, error: str, *, final: str = "failed") -> None:
+    """Задача раскатки или пробного прогона уже не исполняется, а раскатка осталась «в работе».
+
+    Раскатка получает конечный статус (иначе она блокирует новые раскатки проекта), пробный прогон
+    возвращается в черновик. Коммит — здесь."""
+    if r.status == "dry_run":
+        stopped = r.stop_requested
+        r.stop_requested = False
+        r.error = "Пробный прогон остановлен" if stopped else error[:2000]
+        _set_status(db, r, "draft")
+        _audit(db, r, None, "rollout.dry_run_result", result="error", error=r.error)
+        _history(db, r, None, "rollout_dry_run_result", "прерван", error=r.error)
+        db.commit()
+        return
+    if r.status != "running":
+        return
+    rollout_id = r.id
+    for verify in (True, False):
+        r = db.get(Rollout, rollout_id)
+        for h in r.hosts:
+            if h.status == "running":
+                h.status, h.reason, h.finished_at = "failed", INTERRUPTED, utcnow()
+        _skip_rest(r, "аварийный стоп" if final == "stopped" else "раскатка прервана сбоем")
+        try:
+            _finish(db, r, final, error, verify=verify)
+            return
+        except Exception:  # noqa: BLE001 — итог должен записаться, даже если сбой повторяется
+            if not verify:
+                raise
+            db.rollback()
+            log.exception("Раскатка %s: итог не записан, повтор без запуска повторной проверки", rollout_id)
+
+
+def failed_job(db: Session, job: Job, e: Exception) -> None:
+    """Задача упала на непредвиденной ошибке — раскатка не остаётся «Идёт»."""
+    r = db.get(Rollout, int(job.payload["rollout_id"]))
+    expected = "running" if job.kind == "rollout" else "dry_run"
+    if r is None or r.job_id != job.id or r.status != expected:
+        return
+    what = "Раскатка прервана" if job.kind == "rollout" else "Пробный прогон прерван"
+    abort(db, r, f"{what} сбоем задачи: {jobs.safe_error(e)}")
+
+
+@jobs.on_recover
+def abort_orphaned(db: Session) -> list[int]:
+    """Сверка при старте: раскатки «в работе», чья задача уже не исполняется."""
+    out = []
+    for r in list(db.scalars(select(Rollout).where(Rollout.status.in_(["running", "dry_run"])))):
+        if jobs.alive(db, r.job_id):
+            continue
+        what = "Раскатка прервана" if r.status == "running" else "Пробный прогон прерван"
+        out.append(r.id)
+        abort(db, r, f"{what}: задача завершилась сбоем")
+    return out
+
+
+@jobs.handler("rollout_dry_run", pool="long", retry=False, on_failed=failed_job)
 def _job_dry_run(db: Session, job: Job) -> dict:
     return execute_dry_run(db, int(job.payload["rollout_id"]))
 
 
-@jobs.handler("rollout", pool="long", retry=False)
+@jobs.handler("rollout", pool="long", retry=False, on_failed=failed_job)
 def _job_rollout(db: Session, job: Job) -> dict:
     return execute(db, int(job.payload["rollout_id"]))
 
@@ -1228,7 +1293,7 @@ def can(r: Rollout, actor: Actor) -> dict:
     }
 
 
-def stages_out(r: Rollout) -> list[dict]:
+def stages_out(r: Rollout, checks: list | None = None) -> list[dict]:
     """Этапы для экрана: пробный прогон → утверждение → канарейка → партии → проверка."""
     by_stage: dict[int, list[RolloutHost]] = {}
     for h in r.hosts:
@@ -1283,7 +1348,8 @@ def stages_out(r: Rollout) -> list[dict]:
     )
     verify = "pending"
     if r.verification_ids:
-        verify = "running"
+        sts = {v.status for v in checks or []}
+        verify = "running" if not sts or sts & set(verification.ACTIVE) else ("failed" if sts - {"done"} else "done")
     if r.status in FINAL and not r.verification_ids and r.started_at:
         verify = "skipped"
     out.append({"key": "verify", "label": "Проверка", "state": verify})
@@ -1387,7 +1453,10 @@ def rollout_out(db: Session, r: Rollout, actor: Actor | None = None, *, detail: 
             host_out(r, h)
             for h in sorted(r.hosts, key=lambda h: (h.stage if h.stage is not None else 999, _ip_key(h.host)))
         ]
-        out["stages"] = stages_out(r)
+        checks = [
+            v for v in (db.get(verification.Verification, vid) for vid in r.verification_ids or []) if v is not None
+        ]
+        out["stages"] = stages_out(r, checks)
         out["step_counts"] = dict(
             db.execute(
                 select(RolloutStep.rollout_host_id, func.count())
@@ -1395,11 +1464,7 @@ def rollout_out(db: Session, r: Rollout, actor: Actor | None = None, *, detail: 
                 .group_by(RolloutStep.rollout_host_id)
             ).all()
         )
-        out["verifications"] = [
-            verification.verification_out(v)
-            for v in (db.get(verification.Verification, vid) for vid in r.verification_ids or [])
-            if v is not None
-        ]
+        out["verifications"] = [verification.verification_out(v, actor) for v in checks]
     if actor is not None:
         out["can"] = can(r, actor)
     return out

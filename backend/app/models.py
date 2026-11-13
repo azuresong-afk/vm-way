@@ -415,7 +415,7 @@ class Verification(Base):
     engagement_id: Mapped[int] = mapped_column(Integer)
     scanner_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     run_id: Mapped[int | None] = mapped_column(ForeignKey("scan_runs.id", ondelete="SET NULL"), nullable=True)
-    status: Mapped[str] = mapped_column(String(16), default="requested")  # requested|running|done|failed
+    status: Mapped[str] = mapped_column(String(16), default="requested")  # requested|running|done|failed|cancelled
     targets: Mapped[list] = mapped_column(JSON, default=list)
     denied_targets: Mapped[list] = mapped_column(JSON, default=list)
     modules: Mapped[list] = mapped_column(JSON, default=list)

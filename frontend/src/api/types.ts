@@ -197,7 +197,7 @@ export interface VerificationOut {
   engagement_id: number | null;
   scanner_run_id: number | null;
   run_id: number | null;
-  status: "requested" | "running" | "done" | "failed";
+  status: "requested" | "running" | "done" | "failed" | "cancelled";
   targets: string[];
   denied_targets: { target: string; reason: string }[] | null;
   modules: string[];
@@ -206,11 +206,15 @@ export interface VerificationOut {
     hosts?: HostResult[];
     counts?: { confirmed: number; not_confirmed: number; unverified: number };
     job_id?: number;
+    cancel_reason?: string;
+    stop_error?: string;
   } | null;
   error: string | null;
   requested_by: string | null;
   created_at: string;
   finished_at: string | null;
+  /** Текущий пользователь может отменить проверку: она идёт, и он её запустил или он руководитель. */
+  can_cancel?: boolean;
 }
 
 export interface TicketCan {

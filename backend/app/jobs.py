@@ -66,6 +66,24 @@ class Spec:
 
 
 _handlers: dict[str, Spec] = {}
+# Задача в одном из этих статусов ещё исполняется или будет исполнена.
+ALIVE = ("queued", "running")
+RecoverHook = Callable[[Session], object]
+_recover_hooks: list[RecoverHook] = []
+
+
+def on_recover(fn: RecoverHook) -> RecoverHook:
+    """Сверка при старте службы: объекты «в работе», чья задача уже не исполняется.
+
+    Дополняет `on_failed`: закрывает то, что зависло, когда записать сбой было некуда (БД была
+    недоступна) или до появления обработчиков сбоя."""
+    _recover_hooks.append(fn)
+    return fn
+
+
+def alive(db: Session, job_id: int | None) -> bool:
+    job = db.get(Job, job_id) if job_id else None
+    return job is not None and job.status in ALIVE
 
 
 def handler(
@@ -154,6 +172,13 @@ class JobRunner:
                     job.error = "Служба перезапускалась — задача поставлена в очередь заново"
                 ids.append((job.id, job.kind))
             db.commit()
+            for hook in _recover_hooks:
+                try:
+                    hook(db)
+                    db.commit()
+                except Exception:  # noqa: BLE001 — сбой сверки не мешает старту службы
+                    db.rollback()
+                    log.exception("Сбой сверки незавершённых объектов (%s)", hook.__name__)
         for job_id, kind in ids:
             self.submit(job_id, kind=kind)
 

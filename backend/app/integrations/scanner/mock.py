@@ -102,6 +102,7 @@ class MockScanner:
             ("GET", r"/engagements/(\d+)/runs", lambda e: self._run_list(int(e), params)),
             ("POST", r"/engagements/(\d+)/runs", lambda e: self._start_run(int(e), body or {})),
             ("GET", r"/runs/(\d+)", lambda r: self._run_meta(int(r))),
+            ("POST", r"/runs/(\d+)/stop", lambda r: self._stop_run(int(r))),
             ("GET", r"/runs/(\d+)/findings", lambda r: self._findings(int(r), params)),
             ("GET", r"/runs/(\d+)/fixes", lambda r: self._fixes(int(r), params)),
             ("GET", r"/runs/(\d+)/coverage", lambda r: self._coverage(int(r))),
@@ -162,6 +163,14 @@ class MockScanner:
                     )
                 else:
                     self._polls[run_id] = left - 1
+            return copy.deepcopy(meta)
+
+    def _stop_run(self, run_id: int) -> dict:
+        """Как в «Сканере»: идущий прогон останавливается, завершённый не меняется."""
+        with self._lock:
+            meta = self._get(run_id)["run"]
+            if meta["status"] in ("pending", "running"):
+                meta.update(status="stopped", finished_at=_now())
             return copy.deepcopy(meta)
 
     def _run_list(self, eid: int, params: httpx.QueryParams) -> httpx.Response:

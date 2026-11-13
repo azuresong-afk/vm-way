@@ -326,7 +326,9 @@ function Params({ r }: { r: RolloutOut }) {
                   {v.scanner_run_id ? `Прогон №${v.scanner_run_id} «Сканера»` : "Прогон ещё не запущен"} ·{" "}
                   <span className="faint">{v.targets.length} хост(ов)</span>
                 </span>
-                <span className={`pill ${o ? OUTCOME_PILL[o] : "pill-info pill-running"}`}>{o ? OUTCOME_LABEL[o] : "идёт"}</span>
+                <span className={`pill ${o ? OUTCOME_PILL[o] : v.status === "failed" ? "pill-danger" : v.status === "cancelled" ? "pill-muted" : "pill-info pill-running"}`}>
+                  {o ? OUTCOME_LABEL[o] : v.status === "failed" ? "ошибка" : v.status === "cancelled" ? "отменена" : "идёт"}
+                </span>
               </div>
             );
           })}

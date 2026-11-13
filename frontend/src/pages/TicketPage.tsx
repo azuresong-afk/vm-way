@@ -6,7 +6,7 @@ import type { CommentOut, HistoryEntry, TicketDetail, TicketStatus, Verification
 import { HostsProgress } from "../components/TicketsTable";
 import { TicketActions } from "../components/TicketActions";
 import { TicketExceptions } from "../components/Exceptions";
-import { Commands, CriticalityBadge, Empty, ErrorAlert, HostStatusPill, Loading, RefTags, SeverityBadge, StatusPill } from "../components/ui";
+import { Commands, ConfirmModal, CriticalityBadge, Empty, ErrorAlert, HostStatusPill, Loading, RefTags, SeverityBadge, StatusPill } from "../components/ui";
 import { fmtDate, fmtDay, fmtNumber, plural } from "../lib/format";
 import {
   KIND_LABEL,
@@ -309,6 +309,7 @@ const V_STATUS: Record<VerificationOut["status"], [string, string]> = {
   running: ["Идёт", "pill-info pill-running"],
   done: ["Завершена", "pill-ok"],
   failed: ["Ошибка", "pill-danger"],
+  cancelled: ["Отменена", "pill-muted"],
 };
 
 function Rollouts({ t }: { t: TicketDetail }) {
@@ -335,8 +336,24 @@ function Rollouts({ t }: { t: TicketDetail }) {
   );
 }
 
-function Checks({ t }: { t: TicketDetail }) {
+function Checks({ t, onChanged }: { t: TicketDetail; onChanged: () => void }) {
+  const [cancelling, setCancelling] = useState<VerificationOut | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (!t.verifications.length) return null;
+  const cancel = async (v: VerificationOut) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.cancelVerification(v.id);
+      setCancelling(null);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <section className="card card-pad stack" aria-labelledby="checks-head">
       <h2 id="checks-head">Повторные проверки</h2>
@@ -359,12 +376,48 @@ function Checks({ t }: { t: TicketDetail }) {
                   {c ? ` · подтверждено ${c.confirmed}, не подтверждено ${c.not_confirmed}, не проверено ${c.unverified}` : ""}
                 </span>
                 {v.error && <span className="faint" style={{ fontSize: 12.5, color: "var(--danger)" }}>{v.error}</span>}
+                {v.status === "cancelled" && v.result?.cancel_reason && (
+                  <span className="faint" style={{ fontSize: 12.5 }}>Причина: {v.result.cancel_reason}</span>
+                )}
+                {v.result?.stop_error && (
+                  <span className="faint" style={{ fontSize: 12.5, color: "var(--danger)" }}>
+                    Прогон в «Сканере» остановить не удалось — остановите его вручную.
+                  </span>
+                )}
               </span>
               <span className={`pill ${pill}`}>{label}</span>
+              {v.can_cancel && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    setError(null);
+                    setCancelling(v);
+                  }}
+                >
+                  Отменить
+                </button>
+              )}
             </div>
           );
         })}
       </div>
+      {cancelling && (
+        <ConfirmModal
+          title="Отменить повторную проверку?"
+          confirmLabel="Отменить проверку"
+          closeLabel="Не отменять"
+          busy={busy}
+          error={error}
+          onClose={() => setCancelling(null)}
+          onConfirm={() => void cancel(cancelling)}
+        >
+          <span className="muted">
+            {cancelling.scanner_run_id ? `Прогон №${cancelling.scanner_run_id} «Сканера» будет остановлен, его итог к заявке не применится.` : "Прогон «Сканера» не будет запущен."}{" "}
+            Статус заявки не изменится, проверку можно запустить заново.
+          </span>
+        </ConfirmModal>
+      )}
     </section>
   );
 }
@@ -399,6 +452,8 @@ function historyText(h: HistoryEntry): string {
       return `Запущена повторная проверка: ${h.to}`;
     case "verify_result":
       return `Итог повторной проверки: ${OUTCOME_LABEL[h.to] ?? h.to}`;
+    case "verify_cancelled":
+      return `Повторная проверка отменена${why}`;
     case "rollout_created":
       return `Подготовлена раскатка №${String(d.rollout_id)}`;
     case "rollout_dry_run":
@@ -565,7 +620,7 @@ export function TicketPage() {
           <Facts t={d} />
           <TicketExceptions t={d} onChanged={() => void t.reload()} />
           <Rollouts t={d} />
-          <Checks t={d} />
+          <Checks t={d} onChanged={() => void t.reload()} />
           <Activity t={d} onChanged={() => void t.reload()} />
         </div>
       </div>

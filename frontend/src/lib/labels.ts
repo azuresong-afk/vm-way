@@ -162,6 +162,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "ticket.bulk": "Массовое действие",
   "ticket.verify": "Повторная проверка",
   "ticket.verify_result": "Итог проверки",
+  "ticket.verify_cancel": "Проверка отменена",
   "ticket.window": "Заявка в окне",
   "window.create": "Окно создано",
   "window.update": "Окно изменено",

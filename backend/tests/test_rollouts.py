@@ -10,10 +10,11 @@ import asyncssh
 import pytest
 from sqlalchemy import select
 
+from app import jobs
 from app.db import utcnow
 from app.integrations.scanner import MockScanner
 from app.integrations.sshsim import SshSim
-from app.models import AuditLog, HostKey, Rollout, RolloutHost, RolloutStep, Ticket, User
+from app.models import AuditLog, HostKey, Job, Rollout, RolloutHost, RolloutStep, Ticket, User
 from app.security import hash_password
 from app.services import rollout_templates as tpl
 from app.services import rollouts as svc
@@ -534,3 +535,80 @@ def test_parallelism_setting(client, as_, project):
         ).status_code
         == 422
     )
+
+
+# --- устойчивость: сбой задачи не оставляет раскатку «в работе» (задача А ревью 2026-11) ---
+
+
+def _boom(*_a, **_kw):
+    raise RuntimeError("обрыв соединения с БД")
+
+
+def test_job_crash_gives_rollout_final_status(client, as_, db, project, sim, monkeypatch):
+    a = _prepared(client, as_, db)
+    b = _prepared(client, as_, db, title=GLIBC)
+    _approve(client, as_, a["id"])
+    _approve(client, as_, b["id"])
+    monkeypatch.setattr(svc, "_parallelism", _boom)
+    r = client.post(f"/rollouts/{a['id']}/start", headers=as_("engineer"))
+    assert r.status_code == 202, r.text
+    db.expire_all()
+    ra = db.get(Rollout, a["id"])
+    assert db.get(Job, ra.job_id).status == "failed"
+    assert ra.status == "failed" and ra.finished_at is not None
+    assert "прервана сбоем задачи" in ra.error and "RuntimeError" in ra.error
+    assert {h.status for h in ra.hosts} == {"skipped"}
+    assert _actions(db, "rollout.finish")[-1].result == "error"
+    # Раскатка больше не занимает проект: соседняя стартует.
+    monkeypatch.undo()
+    monkeypatch.setattr(sshexec, "route", sim.route)
+    r = client.post(f"/rollouts/{b['id']}/start", headers=as_("engineer"))
+    assert r.status_code == 202, r.text
+    assert client.get(f"/rollouts/{b['id']}", headers=as_("engineer")).json()["status"] == "done"
+
+
+def test_dry_run_job_crash_returns_to_draft(client, as_, db, project, sim, monkeypatch):
+    ro = _prepared(client, as_, db)
+    monkeypatch.setattr(svc, "check_allowlist", _boom)
+    r = client.post(f"/rollouts/{ro['id']}/dry-run", headers=as_("engineer"))
+    assert r.status_code == 202, r.text
+    out = client.get(f"/rollouts/{ro['id']}", headers=as_("engineer")).json()
+    assert out["status"] == "draft" and "Пробный прогон прерван сбоем задачи" in out["error"]
+    assert out["can"]["dry_run"] is True
+    monkeypatch.undo()
+    monkeypatch.setattr(sshexec, "route", sim.route)
+    assert client.post(f"/rollouts/{ro['id']}/dry-run", headers=as_("engineer")).status_code == 202
+    assert client.get(f"/rollouts/{ro['id']}", headers=as_("engineer")).json()["status"] == "pending_approval"
+
+
+def test_recover_and_stop_close_rollout_without_live_job(client, as_, db, project, sim):
+    """Раскатка «Идёт», а её задача уже failed (зависла до исправления)."""
+    a = _prepared(client, as_, db)
+    b = _prepared(client, as_, db, title=GLIBC)
+
+    def stuck(rid):
+        db.expire_all()
+        r = db.get(Rollout, rid)
+        r.status = "running"
+        r.hosts[0].status, r.hosts[0].stage = "running", 0
+        for h in r.hosts[1:]:
+            h.status, h.stage = "queued", 1
+        job = db.get(Job, r.job_id)
+        job.status, job.error = "failed", "Внутренняя ошибка: OperationalError"
+        db.commit()
+
+    # Сверка при старте службы.
+    stuck(a["id"])
+    jobs.runner.recover()
+    db.expire_all()
+    ra = db.get(Rollout, a["id"])
+    assert ra.status == "failed" and "задача завершилась сбоем" in ra.error
+    assert ra.hosts[0].status == "failed" and "проверьте хост вручную" in ra.hosts[0].reason
+    assert {h.status for h in ra.hosts[1:]} == {"skipped"}
+    # Аварийный стоп без перезапуска службы: флаг некому прочитать — раскатка завершается сразу.
+    stuck(b["id"])
+    r = client.post(f"/rollouts/{b['id']}/stop", headers=as_("manager"), json={"reason": "Раскатка зависла"})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["status"] == "stopped" and out["stop_reason"] == "Раскатка зависла" and out["finished_at"]
+    assert out["can"]["stop"] is False

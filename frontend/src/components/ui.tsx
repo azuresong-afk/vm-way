@@ -246,6 +246,7 @@ export function ConfirmModal({
   title,
   children,
   confirmLabel,
+  closeLabel = "Отмена",
   onConfirm,
   onClose,
   busy,
@@ -254,6 +255,7 @@ export function ConfirmModal({
   title: string;
   children: ReactNode;
   confirmLabel: string;
+  closeLabel?: string;
   onConfirm: () => void;
   onClose: () => void;
   busy?: boolean;
@@ -266,7 +268,7 @@ export function ConfirmModal({
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
-            Отмена
+            {closeLabel}
           </button>
           <button type="button" className="btn btn-danger" onClick={onConfirm} disabled={busy}>
             {confirmLabel}
