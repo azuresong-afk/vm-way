@@ -75,3 +75,5 @@ npm run dev   # http://localhost:5174, /api проксируется на API :8
 ```
 
 Запуск API без Docker — [docs/INSTALL.md, раздел 11](docs/INSTALL.md#11-запуск-без-docker-разработка). CI (`.github/workflows/ci.yml`): ruff, pytest с миграциями на PostgreSQL, ESLint, typecheck, vitest, сборка, а также сборка образов, проверка всего стека `docker compose up` и сквозной тест интерфейса на Playwright (`e2e/`, см. [docs/TESTING.md](docs/TESTING.md#сквозной-тест-интерфейса)).
+
+Аудит зависимостей (`.github/workflows/audit.yml`, на PR, в main и раз в неделю): `pip-audit` по закреплённым версиям и `npm audit` по зависимостям сборки; обновления предлагает Dependabot (`.github/dependabot.yml`).

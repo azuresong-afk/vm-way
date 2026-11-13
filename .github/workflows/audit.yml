@@ -1,0 +1,46 @@
+name: Аудит зависимостей
+
+# Отдельно от CI: известные уязвимости появляются и без правок кода, поэтому
+# кроме PR и main проверка идёт раз в неделю по расписанию.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit==2.10.1
+      # Проверяются закреплённые версии и всё, что они тянут за собой (включая dev-инструменты).
+      - run: pip-audit -r requirements-dev.txt
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Блокирует только то, что попадает в сборку для пользователя (без dev-инструментов),
+      # начиная с уровня high. Аудиту нужен только package-lock.json, установка не требуется.
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Полный отчёт, включая dev-зависимости (не блокирует)
+        if: always()
+        run: npm audit || true
