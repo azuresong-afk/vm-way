@@ -2,7 +2,7 @@
 # nginx проксирует /api/* на API с отрезанием префикса — интерфейс и API на одном
 # origin, CORS не нужен. Адрес API — переменная API_UPSTREAM.
 
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
