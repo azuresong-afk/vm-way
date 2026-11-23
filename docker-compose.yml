@@ -56,7 +56,7 @@ services:
     logging: *default-logging
 
   db:
-    image: postgres:16
+    image: postgres:19
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-vm}
       POSTGRES_USER: ${POSTGRES_USER:-vm}
